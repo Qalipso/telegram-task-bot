@@ -52,7 +52,7 @@ class TelegramConnector:
                     sender_display_name=getattr(sender, "first_name", None),
                     text=(msg.message or None),
                     sent_at=msg.date,
-                    raw={"id": msg.id},
+                    raw={"id": msg.id, "reply_to": getattr(msg, "reply_to_msg_id", None)},
                     message_type=message_type,
                     attachments=attachments,
                 )
