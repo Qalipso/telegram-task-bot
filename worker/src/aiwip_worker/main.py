@@ -28,10 +28,34 @@ def run_once() -> dict:
 
 
 def run() -> None:
-    logger.info("worker starting (heartbeat every %ss)", settings.worker_heartbeat_seconds)
+    """Main loop: drain the job queue, with a periodic heartbeat and scheduled-sync enqueue."""
+    from aiwip_core.db import get_sessionmaker
+
+    from . import consumer
+
+    logger.info(
+        "worker starting: queue consumer + scheduler (every %ss)", settings.sync_interval_seconds
+    )
+    last_heartbeat = 0.0
+    last_schedule = time.monotonic()  # wait a full interval before the first scheduled run
     while True:
-        run_once()
-        time.sleep(settings.worker_heartbeat_seconds)
+        try:
+            consumer.consume_once(timeout=5)
+        except Exception:  # noqa: BLE001 — a bad job must not kill the worker
+            logger.exception("job processing error")
+
+        now = time.monotonic()
+        if now - last_heartbeat >= settings.worker_heartbeat_seconds:
+            run_once()
+            last_heartbeat = now
+        if now - last_schedule >= settings.sync_interval_seconds:
+            try:
+                with get_sessionmaker()() as db:
+                    n = consumer.enqueue_scheduled_syncs(db)
+                logger.info("scheduled sync for %s active chat(s)", n)
+            except Exception:  # noqa: BLE001
+                logger.exception("scheduler error")
+            last_schedule = now
 
 
 if __name__ == "__main__":

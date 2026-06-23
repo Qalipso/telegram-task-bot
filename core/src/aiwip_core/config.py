@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Worker
     worker_heartbeat_seconds: int = 30
+    sync_interval_seconds: int = 6 * 3600  # scheduled sync cadence (system-spec §8)
 
     # Auth (Stage 3)
     secret_key: str = "dev-insecure-change-me"
