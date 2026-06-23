@@ -11,6 +11,7 @@ from fastapi import FastAPI, Response, status
 from aiwip_core import health
 from aiwip_core.logging import get_logger
 
+from aiwip_api.routers import assignees as assignees_router
 from aiwip_api.routers import auth as auth_router
 from aiwip_api.routers import sync as sync_router
 from aiwip_api.routers import users as users_router
@@ -22,6 +23,7 @@ app = FastAPI(title="AI Work Intelligence Platform API", version="0.1.0")
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
 app.include_router(sync_router.router)
+app.include_router(assignees_router.router)
 
 
 @app.get("/health")

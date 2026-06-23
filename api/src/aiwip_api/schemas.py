@@ -25,3 +25,33 @@ class UserOut(BaseModel):
     email: str
     display_name: str | None = None
     role: UserRole
+
+
+class CreateAssigneeRequest(BaseModel):
+    display_name: str | None = None
+    telegram_user_id: int | None = None
+    telegram_username: str | None = None
+    aliases: list[str] = []
+    user_id: int | None = None
+    is_active: bool = True
+
+
+class UpdateAssigneeRequest(BaseModel):
+    display_name: str | None = None
+    telegram_user_id: int | None = None
+    telegram_username: str | None = None
+    aliases: list[str] | None = None
+    user_id: int | None = None
+    is_active: bool | None = None
+
+
+class AssigneeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    display_name: str | None = None
+    telegram_user_id: int | None = None
+    telegram_username: str | None = None
+    aliases: list[str] | None = None
+    is_active: bool
+    user_id: int | None = None
