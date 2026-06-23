@@ -45,8 +45,24 @@ def test_candidate_links_multiple_messages(session):
     }
 
 
+def test_candidate_multiple_assignees(session):
+    """Test #60 — a candidate can have multiple assignees (with exactly one primary)."""
+    cand = m.Candidate(candidate_type=m.CandidateType.task, title="multi", status=m.CandidateStatus.needs_review)
+    a1, a2 = m.Assignee(display_name="A"), m.Assignee(display_name="B")
+    session.add_all([cand, a1, a2])
+    session.flush()
+    session.add_all([
+        m.CandidateAssignee(candidate_id=cand.id, assignee_id=a1.id, confidence=0.9, is_primary=True),
+        m.CandidateAssignee(candidate_id=cand.id, assignee_id=a2.id, confidence=0.4, is_primary=False),
+    ])
+    session.flush()
+    session.refresh(cand)
+    assert len(cand.candidate_assignees) == 2
+    assert sum(1 for ca in cand.candidate_assignees if ca.is_primary) == 1
+
+
 def test_work_item_multiple_assignees_and_one_per_candidate(session):
-    """Test #60/#69 — multi-assignee work item; and the 1 candidate → 1 work_item invariant."""
+    """Test #69 — multi-assignee work item; and the 1 candidate → 1 work_item invariant."""
     cand = m.Candidate(candidate_type=m.CandidateType.task, title="x", status=m.CandidateStatus.approved)
     session.add(cand)
     session.flush()
@@ -80,6 +96,15 @@ def test_tags_via_join_tables(session):
     session.flush()
     session.refresh(cand)
     assert [cl.label.name for cl in cand.candidate_labels] == ["backend"]
+
+    # work-item side of the same tag vocabulary (work_item_labels join)
+    wi = m.WorkItem(source_candidate_id=cand.id, type=m.WorkItemType.idea, status=m.WorkItemStatus.inbox)
+    session.add(wi)
+    session.flush()
+    session.add(m.WorkItemLabel(work_item_id=wi.id, label_id=label.id))
+    session.flush()
+    session.refresh(wi)
+    assert [wl.label.name for wl in wi.work_item_labels] == ["backend"]
 
 
 def test_assignee_user_unique(session):
