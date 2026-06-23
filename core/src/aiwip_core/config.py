@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     telegram_api_hash: str | None = None
     telegram_phone: str | None = None
     telegram_session: str | None = None
+    telegram_chat_id: int | None = None
 
     # OpenAI (Stage 8) — Optional until the AI pipeline is wired.
     openai_api_key: str | None = None
