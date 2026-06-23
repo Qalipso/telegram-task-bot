@@ -3,7 +3,8 @@ from aiwip_core.config import Settings
 
 
 def test_defaults_load():
-    s = Settings()
+    # _env_file=None: test pure defaults/env, independent of any developer .env.
+    s = Settings(_env_file=None)
     assert s.app_env  # non-empty default
     assert s.database_url.startswith("postgresql")
     assert s.redis_url.startswith("redis://")

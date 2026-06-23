@@ -9,6 +9,7 @@ description = "Background worker (sync, normalization, context, AI pipeline) for
 requires-python = ">=3.12"
 dependencies = [
     "aiwip-core",
+    "telethon>=1.36",
 ]
 
 [project.optional-dependencies]
