@@ -9,7 +9,7 @@ from aiwip_core.db import get_sessionmaker
 from aiwip_core.logging import get_logger
 from aiwip_core.models import Chat, ConnectorType, SyncRun, SyncRunStatus, SyncTriggerType
 
-from . import sync
+from . import normalize, sync
 from .connectors.base import Connector
 from .connectors.telegram import TelegramConnector
 
@@ -53,6 +53,7 @@ def process_job(job: dict, connector_factory=_build_connector, session_factory=N
     with sf() as db:
         run = sync_chat(db, connector_factory(), chat_id, trigger, job.get("user_id"))
         status = run.status
+        normalize.normalize_pending(db)  # sync → normalize (pipeline step)
     attempts = job.get("attempts", 0)
     if status == SyncRunStatus.failed:
         if should_requeue(status, attempts):

@@ -14,8 +14,11 @@ from sqlalchemy.orm import Session
 
 from aiwip_core.logging import get_logger
 from aiwip_core.models import (
+    AttachmentProcessingStatus,
+    AttachmentType,
     Chat,
     Message,
+    MessageAttachment,
     MessageProcessingStatus,
     MessageType,
     SyncRun,
@@ -77,21 +80,30 @@ def run_sync(
         for fm in fetched:
             if fm.external_message_id in existing:
                 continue
-            db.add(
-                Message(
-                    chat_id=chat.id,
-                    external_message_id=fm.external_message_id,
-                    sender_external_id=fm.sender_external_id,
-                    sender_username=fm.sender_username,
-                    sender_display_name=fm.sender_display_name,
-                    message_type=MessageType.text,
-                    text_content=fm.text,
-                    sent_at=fm.sent_at,
-                    synced_at=_utcnow(),
-                    raw_payload=fm.raw,
-                    processing_status=MessageProcessingStatus.new,
-                )
+            message = Message(
+                chat_id=chat.id,
+                external_message_id=fm.external_message_id,
+                sender_external_id=fm.sender_external_id,
+                sender_username=fm.sender_username,
+                sender_display_name=fm.sender_display_name,
+                message_type=MessageType(fm.message_type),
+                text_content=fm.text,
+                sent_at=fm.sent_at,
+                synced_at=_utcnow(),
+                raw_payload=fm.raw,
+                processing_status=MessageProcessingStatus.new,
             )
+            db.add(message)
+            for att in fm.attachments:
+                db.add(
+                    MessageAttachment(
+                        message=message,
+                        attachment_type=AttachmentType(att.attachment_type),
+                        file_name=att.file_name,
+                        mime_type=att.mime_type,
+                        processing_status=AttachmentProcessingStatus.new,
+                    )
+                )
             saved += 1
             if max_id is None or fm.external_message_id > max_id:
                 max_id = fm.external_message_id

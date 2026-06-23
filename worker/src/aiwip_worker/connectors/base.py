@@ -7,6 +7,13 @@ from typing import Protocol, runtime_checkable
 
 
 @dataclass
+class FetchedAttachment:
+    attachment_type: str  # voice | image | document
+    file_name: str | None = None
+    mime_type: str | None = None
+
+
+@dataclass
 class FetchedMessage:
     external_message_id: int
     sender_external_id: int | None
@@ -15,6 +22,8 @@ class FetchedMessage:
     text: str | None
     sent_at: dt.datetime
     raw: dict = field(default_factory=dict)
+    message_type: str = "text"  # text | voice | image | document | mixed
+    attachments: list = field(default_factory=list)
 
 
 @runtime_checkable

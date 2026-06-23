@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from aiwip_core.config import settings
 
-from .base import FetchedMessage
+from .base import FetchedAttachment, FetchedMessage
 
 
 class TelegramConnector:
@@ -43,6 +43,7 @@ class TelegramConnector:
             chat_external_id, min_id=after_message_id or 0, limit=limit, reverse=True
         ):
             sender = getattr(msg, "sender", None)
+            message_type, attachments = self._detect_media(msg)
             out.append(
                 FetchedMessage(
                     external_message_id=msg.id,
@@ -52,6 +53,22 @@ class TelegramConnector:
                     text=(msg.message or None),
                     sent_at=msg.date,
                     raw={"id": msg.id},
+                    message_type=message_type,
+                    attachments=attachments,
                 )
             )
         return out
+
+    @staticmethod
+    def _detect_media(msg) -> tuple[str, list]:
+        """Best-effort media metadata only — no download/processing (Stage 5 placeholders)."""
+        if getattr(msg, "photo", None):
+            return "image", [FetchedAttachment("image")]
+        if getattr(msg, "voice", None):
+            return "voice", [FetchedAttachment("voice")]
+        if getattr(msg, "document", None):
+            f = getattr(msg, "file", None)
+            return "document", [
+                FetchedAttachment("document", file_name=getattr(f, "name", None), mime_type=getattr(f, "mime_type", None))
+            ]
+        return "text", []
