@@ -235,6 +235,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(user_role_enum, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # bcrypt hash; NULL = no password login
     created_at: Mapped[dt.datetime] = _created_at()
     updated_at: Mapped[dt.datetime] = _updated_at()
 
