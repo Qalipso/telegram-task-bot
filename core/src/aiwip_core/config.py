@@ -1,0 +1,47 @@
+"""Application settings, loaded from environment / .env (pydantic-settings).
+
+Secrets (Telegram, OpenAI) are Optional so the system boots without them; they
+are only required by the stages that use them (Telegram = Stage 4, OpenAI = Stage 8).
+"""
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    # Runtime
+    app_env: str = "local"
+    log_level: str = "INFO"
+
+    # Connections. Defaults target host-side runs (localhost); docker-compose
+    # overrides them to the in-network hostnames "postgres" / "redis".
+    database_url: str = "postgresql+psycopg://aiwip:aiwip@localhost:5432/aiwip"
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Worker
+    worker_heartbeat_seconds: int = 30
+
+    # Auth (Stage 3)
+    secret_key: str = "dev-insecure-change-me"
+
+    # Telegram (Stage 4) — Optional until the connector is wired.
+    telegram_api_id: int | None = None
+    telegram_api_hash: str | None = None
+    telegram_phone: str | None = None
+    telegram_session: str | None = None
+
+    # OpenAI (Stage 8) — Optional until the AI pipeline is wired.
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

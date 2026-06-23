@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiwip-core"
+version = "0.1.0"
+description = "Shared core (config, db, models, logging, health) for the AI Work Intelligence Platform."
+requires-python = ">=3.12"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "redis>=5.0",
+    "pydantic-settings>=2.2",
+    "alembic>=1.13",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

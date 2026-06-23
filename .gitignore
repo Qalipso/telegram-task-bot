@@ -1,0 +1,24 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+*.session
+*.session-journal
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Docker volumes / data
+pgdata/
+
+# OS
+.DS_Store
