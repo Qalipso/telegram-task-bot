@@ -39,7 +39,7 @@ from .llm.client import OpenAIClient
 logger = get_logger("aiwip.worker.extract")
 
 ACTIVE_TYPES = {"task", "request", "reminder", "idea", "knowledge"}
-PRIORITIES = {"critical", "high", "medium", "low"}
+PRIORITIES = {"high", "medium", "low"}  # shown to users as High / Mid / Low
 
 
 def _now() -> dt.datetime:
@@ -150,7 +150,7 @@ def extract_candidates(
         db.add(candidate)
         db.flush()
 
-        _link_messages(db, candidate, c, ctx, ext_to_id)
+        _link_messages(db, candidate, c, ext_to_id)
         resolved = _link_assignees(db, candidate, c)
         if not resolved:
             if "assignee" not in candidate.missing_fields:
@@ -165,7 +165,10 @@ def extract_candidates(
     return created
 
 
-def _link_messages(db, candidate, c, ctx, ext_to_id) -> None:
+def _link_messages(db, candidate, c, ext_to_id) -> None:
+    """Link ONLY the messages the LLM tied to this task — the anchor (primary) and any
+    supporting evidence — so each candidate's history reflects the related conversation,
+    not the whole analysis window."""
     linked: set[int] = set()
     for ext in c.source_message_ids:
         if ext in ext_to_id and ext not in linked:
@@ -175,11 +178,11 @@ def _link_messages(db, candidate, c, ctx, ext_to_id) -> None:
         if ext in ext_to_id and ext not in linked:
             db.add(CandidateMessage(candidate_id=candidate.id, message_id=ext_to_id[ext], role=CandidateMessageRole.supporting))
             linked.add(ext)
-    for cm in ctx.messages:
-        ext = cm.external_message_id
-        if ext in ext_to_id and ext not in linked:
-            db.add(CandidateMessage(candidate_id=candidate.id, message_id=ext_to_id[ext], role=CandidateMessageRole.context))
-            linked.add(ext)
+    # Fallback: if the model named no source, anchor to the most-recent window message so the
+    # candidate is never orphaned from its origin.
+    if not linked and ext_to_id:
+        newest_ext = max(ext_to_id)
+        db.add(CandidateMessage(candidate_id=candidate.id, message_id=ext_to_id[newest_ext], role=CandidateMessageRole.primary))
 
 
 def _link_assignees(db, candidate, c) -> bool:

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 SYSTEM = """You extract WORK ITEMS from a window of team chat messages.
 
@@ -28,8 +28,9 @@ But IGNORE pure social chatter, greetings, reactions, jokes, emoji-only messages
 gibberish/keyboard-mash — for a window that is only that, return an empty candidates list. A false
 work item from real noise is still bad; the goal is to catch genuine signals, not to invent them.
 
-Priority: one of critical, high, medium, low, or null. Use "critical" ONLY for an explicit blocker,
-urgency, risk of failure, or business-critical action. If priority is not stated, use null.
+Priority: one of "high", "medium", or "low" (shown to users as High / Mid / Low), or null. Use "high"
+for urgent, blocking, time-critical, or business-critical work; "low" for minor or clearly non-urgent
+work; "medium" otherwise. If priority is genuinely unclear from the message, use null.
 Assignees: choose ONLY from the provided assignee list (match by username/alias/name). Multiple are
 allowed. If you cannot determine an assignee, leave the array empty and add "assignee" to missing_fields.
 Due date: convert relative dates ("Friday", "tomorrow") into an ISO-8601 calendar date using the given
@@ -62,7 +63,7 @@ JSON_SCHEMA = {
                         "type": {"type": "string", "enum": ["task", "request", "reminder", "idea", "knowledge"]},
                         "title": {"type": "string"},
                         "summary": {"type": "string"},
-                        "priority": {"type": ["string", "null"], "enum": ["critical", "high", "medium", "low", None]},
+                        "priority": {"type": ["string", "null"], "enum": ["high", "medium", "low", None]},
                         "due_date": {"type": ["string", "null"]},
                         "assignees": {"type": "array", "items": {"type": "string"}},
                         "source_message_ids": {"type": "array", "items": {"type": "integer"}},

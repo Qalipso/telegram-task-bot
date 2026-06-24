@@ -18,9 +18,13 @@ export const COLUMN_ACCENT: Record<WorkItemStatus, string> = {
   blocked: "#c4810b", review: "#7a52c4", done: "#1f9d57", cancelled: "#b0b8c0", archived: "#9aa3ad",
 };
 
+export const PRIORITY_LABEL: Record<string, string> = {
+  critical: "Critical", high: "High", medium: "Mid", low: "Low",
+};
+
 export function PriorityBadge({ priority }: { priority: Priority | null }) {
-  if (!priority) return <span className="badge">no priority</span>;
-  return <span className={`badge prio-${priority}`}>{priority}</span>;
+  if (!priority) return <span className="badge">No priority</span>;
+  return <span className={`badge prio-${priority}`}>{PRIORITY_LABEL[priority] ?? priority}</span>;
 }
 
 export function TypeBadge({ type }: { type: CandidateType }) {

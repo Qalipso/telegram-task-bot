@@ -4,12 +4,12 @@ import AppShell from "../components/AppShell";
 import { apiGet, apiPatch, apiPost, ApiError } from "../lib/api";
 import {
   PriorityBadge, TypeBadge, StatusBadge, ConfidenceBar, MissingFields,
-  fmtDate, fmtDateTime, CANDIDATE_STATUSES, STATUS_LABEL,
+  fmtDate, fmtDateTime, CANDIDATE_STATUSES, STATUS_LABEL, PRIORITY_LABEL,
 } from "../components/ui";
 import type { Candidate, CandidateDetail, CandidateType, Priority } from "../lib/types";
 
 const TYPES: CandidateType[] = ["task", "request", "reminder", "idea", "knowledge"];
-const PRIORITIES: Priority[] = ["critical", "high", "medium", "low"];
+const PRIORITIES: Priority[] = ["high", "medium", "low"];
 
 export default function ReviewPage() {
   return <AppShell><Review /></AppShell>;
@@ -175,7 +175,7 @@ function CandidateDrawer({ detail, onClose, onChanged }: {
             <label className="field" style={{ flex: 1 }}>Priority
               <select className="select" value={priority} disabled={locked} onChange={(e) => setPriority(e.target.value)}>
                 <option value="">none</option>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
               </select>
             </label>
             <label className="field" style={{ flex: 1 }}>Due date
@@ -189,7 +189,7 @@ function CandidateDrawer({ detail, onClose, onChanged }: {
             <div className="kv">
               <span className="k">Confidence</span><ConfidenceBar value={c.task_confidence} />
               <span className="k">Assignees</span>
-              <span>{detail.assignees.length ? detail.assignees.map((a) => `#${a.assignee_id}${a.is_primary ? " (primary)" : ""}`).join(", ") : <span className="faint">unassigned</span>}</span>
+              <span>{detail.assignees.length ? detail.assignees.map((a) => `${a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}${a.is_primary ? " (primary)" : ""}`).join(", ") : <span className="faint">unassigned</span>}</span>
               <span className="k">Created</span><span className="muted">{fmtDateTime(c.created_at)}</span>
             </div>
           </div>

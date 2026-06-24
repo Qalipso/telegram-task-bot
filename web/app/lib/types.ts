@@ -37,9 +37,16 @@ export interface CandidateMessage {
   text: string | null;
 }
 
+export interface CandidateAssigneeRef {
+  assignee_id: number;
+  is_primary: boolean;
+  display_name: string | null;
+  telegram_username: string | null;
+}
+
 export interface CandidateDetail {
   candidate: Candidate;
-  assignees: { assignee_id: number; is_primary: boolean }[];
+  assignees: CandidateAssigneeRef[];
   messages: CandidateMessage[];
 }
 

@@ -15,6 +15,7 @@ from aiwip_api import auth
 from aiwip_api.schemas import CandidateOut, UpdateCandidateRequest, WorkItemOut
 from aiwip_core import audit, promotion
 from aiwip_core.models import (
+    Assignee,
     AuditAction,
     AuditEntityType,
     Candidate,
@@ -63,8 +64,10 @@ def get_candidate(
 ) -> dict:
     candidate = _get_or_404(db, candidate_id)
     assignees = db.execute(
-        select(CandidateAssignee).where(CandidateAssignee.candidate_id == candidate_id)
-    ).scalars().all()
+        select(CandidateAssignee, Assignee)
+        .join(Assignee, Assignee.id == CandidateAssignee.assignee_id)
+        .where(CandidateAssignee.candidate_id == candidate_id)
+    ).all()
     links = db.execute(
         select(CandidateMessage, Message)
         .join(Message, Message.id == CandidateMessage.message_id)
@@ -73,7 +76,15 @@ def get_candidate(
     ).all()
     return {
         "candidate": CandidateOut.model_validate(candidate).model_dump(),
-        "assignees": [{"assignee_id": a.assignee_id, "is_primary": a.is_primary} for a in assignees],
+        "assignees": [
+            {
+                "assignee_id": ca.assignee_id,
+                "is_primary": ca.is_primary,
+                "display_name": a.display_name,
+                "telegram_username": a.telegram_username,
+            }
+            for ca, a in assignees
+        ],
         "messages": [
             {
                 "message_id": link.message_id,

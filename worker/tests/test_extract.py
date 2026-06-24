@@ -60,7 +60,7 @@ def test_creates_candidate_with_links_and_ai_run(db):
     assert len(cas) == 1 and cas[0].assignee_id == bob.id and cas[0].is_primary
     runs = db.query(m.AiRun).all()
     assert len(runs) == 1 and runs[0].status == "success" and runs[0].run_type == m.AiRunType.extraction
-    assert runs[0].input_hash and runs[0].prompt_version == "v2"
+    assert runs[0].input_hash and runs[0].prompt_version == "v3"
     assert db.query(m.WorkItem).count() == 0  # AI never creates work items
 
 
@@ -110,3 +110,19 @@ def test_due_date_parsed(db):
     _msg(db, chat, 1)
     created = extract.extract_candidates(db, chat.id, client=FakeLLMClient(_output(due="2026-06-05", source=[1])))
     assert created[0].due_date is not None and created[0].due_date.year == 2026
+
+
+def test_links_only_related_messages_not_whole_window(db):
+    """Each candidate links only the anchor + supporting messages the LLM named — not every
+    message in the analysis window (so the history reflects the related conversation)."""
+    chat = _chat(db, 907)
+    _msg(db, chat, 1, minutes=0, text="morning team")       # unrelated chatter, in the window
+    _msg(db, chat, 2, minutes=1, text="please ship the report")
+    _msg(db, chat, 3, minutes=2, text="by friday")
+    out = _output(source=[2])
+    out["candidates"][0]["supporting_message_ids"] = [3]
+    created = extract.extract_candidates(db, chat.id, client=FakeLLMClient(out))
+    links = db.query(m.CandidateMessage).filter_by(candidate_id=created[0].id).all()
+    linked_ext = {db.get(m.Message, link.message_id).external_message_id for link in links}
+    assert linked_ext == {2, 3}  # message 1 (unrelated window chatter) is NOT linked
+    assert all(link.role != m.CandidateMessageRole.context for link in links)

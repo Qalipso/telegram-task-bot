@@ -47,12 +47,13 @@ function Assignees() {
             <div className="muted">Add the people who appear in your Telegram chats.</div></div>
         ) : (
           <table className="tbl">
-            <thead><tr><th>Name</th><th>Telegram</th><th>Aliases</th><th>Linked user</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Telegram</th><th>Telegram ID</th><th>Aliases</th><th>Linked user</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {items.map((a) => (
                 <tr key={a.id}>
                   <td style={{ fontWeight: 600 }}>{a.display_name || <span className="faint">—</span>}</td>
                   <td className="muted">{a.telegram_username ? `@${a.telegram_username}` : <span className="faint">—</span>}</td>
+                  <td className="mono">{a.telegram_user_id != null ? a.telegram_user_id : <span className="faint">—</span>}</td>
                   <td>{a.aliases?.length ? <span className="chips">{a.aliases.map((x) => <span key={x} className="badge">{x}</span>)}</span> : <span className="faint">—</span>}</td>
                   <td className="muted">{a.user_id ? `user #${a.user_id}` : <span className="faint">—</span>}</td>
                   <td><span className={`badge ${a.is_active ? "st-done" : "st-rejected"}`}>{a.is_active ? "active" : "inactive"}</span></td>
@@ -83,6 +84,7 @@ function AssigneeDrawer({ assignee, onClose, onSaved }: {
 }) {
   const [displayName, setDisplayName] = useState(assignee?.display_name ?? "");
   const [username, setUsername] = useState(assignee?.telegram_username ?? "");
+  const [tgId, setTgId] = useState(assignee?.telegram_user_id != null ? String(assignee.telegram_user_id) : "");
   const [aliases, setAliases] = useState((assignee?.aliases ?? []).join(", "));
   const [active, setActive] = useState(assignee?.is_active ?? true);
   const [busy, setBusy] = useState(false);
@@ -93,6 +95,7 @@ function AssigneeDrawer({ assignee, onClose, onSaved }: {
     const payload = {
       display_name: displayName || null,
       telegram_username: username || null,
+      telegram_user_id: tgId.trim() ? Number(tgId.trim()) : null,
       aliases: aliases.split(",").map((s) => s.trim()).filter(Boolean),
       is_active: active,
     };
@@ -115,9 +118,14 @@ function AssigneeDrawer({ assignee, onClose, onSaved }: {
           <label className="field">Display name
             <input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} autoFocus />
           </label>
-          <label className="field">Telegram username
-            <input className="input" value={username} placeholder="without @" onChange={(e) => setUsername(e.target.value)} />
-          </label>
+          <div className="row" style={{ gap: 12 }}>
+            <label className="field" style={{ flex: 1 }}>Telegram username
+              <input className="input" value={username} placeholder="without @" onChange={(e) => setUsername(e.target.value)} />
+            </label>
+            <label className="field" style={{ flex: 1 }}>Telegram user ID <span className="faint" style={{ fontWeight: 400 }}>(unique)</span>
+              <input className="input" type="number" value={tgId} placeholder="e.g. 123456789" onChange={(e) => setTgId(e.target.value)} />
+            </label>
+          </div>
           <label className="field">Aliases <span className="faint" style={{ fontWeight: 400 }}>(comma-separated)</span>
             <input className="input" value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="Vanya, Иван" />
           </label>
