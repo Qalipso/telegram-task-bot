@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from aiwip_core.logging import get_logger
-from aiwip_core.models import Message
+from aiwip_core.models import Message, MessageProcessingStatus
 
 logger = get_logger("aiwip.worker.context")
 
@@ -53,12 +53,14 @@ def _reply_to(message: Message) -> int | None:
     return (message.raw_payload or {}).get("reply_to")
 
 
-def _recent_content_messages(db: Session, chat_id: int, limit: int) -> list[Message]:
+def _recent_content_messages(db: Session, chat_id: int, limit: int, new_only: bool = False) -> list[Message]:
+    query = select(Message).where(Message.chat_id == chat_id, Message.text_content.isnot(None))
+    if new_only:
+        # only messages not yet run through extraction — prevents re-extracting already-analyzed
+        # messages into duplicate candidates on a later sync
+        query = query.where(Message.processing_status == MessageProcessingStatus.normalized)
     rows = db.execute(
-        select(Message)
-        .where(Message.chat_id == chat_id, Message.text_content.isnot(None))
-        .order_by(Message.external_message_id.desc())
-        .limit(limit)
+        query.order_by(Message.external_message_id.desc()).limit(limit)
     ).scalars().all()
     return list(reversed(rows))  # ascending
 
@@ -113,9 +115,10 @@ def _confidence(recent: list[Message], segment: list[Message]) -> float:
 
 
 def build_context(
-    db: Session, chat_id: int, window: int = DEFAULT_WINDOW, topic_gap_minutes: int = DEFAULT_TOPIC_GAP_MINUTES
+    db: Session, chat_id: int, window: int = DEFAULT_WINDOW, topic_gap_minutes: int = DEFAULT_TOPIC_GAP_MINUTES,
+    new_only: bool = False,
 ) -> ContextWindow:
-    recent = _recent_content_messages(db, chat_id, window)
+    recent = _recent_content_messages(db, chat_id, window, new_only=new_only)
     segment = _recent_topic_segment(recent, topic_gap_minutes)
     segment = _with_reply_references(db, chat_id, segment)
     ctx_messages = [

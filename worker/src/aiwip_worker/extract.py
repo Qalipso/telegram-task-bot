@@ -72,7 +72,9 @@ def extract_candidates(
     topic_gap_minutes: int = context_mod.DEFAULT_TOPIC_GAP_MINUTES,
 ) -> list[Candidate]:
     client = client or OpenAIClient()
-    ctx = context_mod.build_context(db, chat_id, window=window, topic_gap_minutes=topic_gap_minutes)
+    # new_only: extract only from messages not yet analyzed, so a later sync never re-emits a task
+    # for a message that already became a candidate (duplicate prevention).
+    ctx = context_mod.build_context(db, chat_id, window=window, topic_gap_minutes=topic_gap_minutes, new_only=True)
     if not ctx.messages:
         return []
 

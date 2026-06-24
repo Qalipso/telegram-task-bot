@@ -17,7 +17,7 @@ export default function ReviewPage() {
 
 function Review() {
   const [items, setItems] = useState<Candidate[]>([]);
-  const [filter, setFilter] = useState<string>("");
+  const [filter, setFilter] = useState<string>("pending");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<CandidateDetail | null>(null);
@@ -27,8 +27,13 @@ function Review() {
     setLoading(true);
     setError(null);
     try {
-      const q = filter ? `?status=${filter}` : "";
-      setItems(await apiGet<Candidate[]>(`/api/candidates${q}`));
+      if (filter === "pending") {
+        const all = await apiGet<Candidate[]>("/api/candidates");
+        setItems(all.filter((c) => c.status === "new" || c.status === "needs_review" || c.status === "edited"));
+      } else {
+        const q = filter ? `?status=${filter}` : "";
+        setItems(await apiGet<Candidate[]>(`/api/candidates${q}`));
+      }
     } catch (e) {
       setError(e instanceof ApiError && e.status === 403
         ? "Candidate review requires an admin account."
@@ -56,6 +61,7 @@ function Review() {
         <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <span>Status</span>
           <select className="select" style={{ width: 180 }} value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="pending">To review</option>
             <option value="">All</option>
             {CANDIDATE_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
           </select>
@@ -71,7 +77,9 @@ function Review() {
         ) : items.length === 0 ? (
           <div className="empty">
             <div className="big">📭</div>
-            <div><b>No candidates{filter ? ` with status “${STATUS_LABEL[filter]}”` : ""}.</b></div>
+            <div><b>{filter === "pending"
+              ? "Nothing to review — every candidate has been triaged."
+              : `No candidates${filter ? ` with status “${STATUS_LABEL[filter]}”` : ""}.`}</b></div>
             <div className="muted">Run a sync and let extraction produce candidates, then triage them here.</div>
           </div>
         ) : (

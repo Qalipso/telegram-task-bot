@@ -24,10 +24,12 @@ from aiwip_core.models import (
     CandidateMessage,
     Chat,
     Message,
+    MessageProcessingStatus,
     WorkItem,
     WorkItemAssignee,
     WorkItemLabel,
 )
+from aiwip_worker import context as ctxmod
 from aiwip_worker import extract
 
 # display_name -> (telegram usernames to look up a real id, fallback placeholder id)
@@ -71,13 +73,43 @@ def main() -> None:
             print(f"assignee {name}: telegram_user_id={tg_id}")
         db.commit()
 
-        # 3. re-extract the most-recent window per chat with the live prompt
+        # 3. re-arm ONLY the most-recent topic segment per chat (older messages stay 'analyzed' so
+        #    they are not re-processed), then re-extract a clean single batch with the live prompt.
         total = 0
         for chat in db.execute(select(Chat)).scalars().all():
+            recent = ctxmod._recent_content_messages(db, chat.id, ctxmod.DEFAULT_WINDOW)
+            segment_ids = {msg.id for msg in ctxmod._recent_topic_segment(recent, ctxmod.DEFAULT_TOPIC_GAP_MINUTES)}
+            for msg in db.execute(
+                select(Message).where(Message.chat_id == chat.id, Message.processing_status != MessageProcessingStatus.skipped)
+            ).scalars():
+                msg.processing_status = (
+                    MessageProcessingStatus.normalized if msg.id in segment_ids else MessageProcessingStatus.analyzed
+                )
+            db.commit()
             created = extract.extract_candidates(db, chat.id)
             total += len(created)
-            print(f"chat {chat.id}: extracted {len(created)} candidate(s)")
-        print(f"done — {total} candidate(s) in the review queue")
+            print(f"chat {chat.id}: extracted {len(created)} candidate(s) from {len(segment_ids)} segment msg(s)")
+
+        # 4. demo safety: drop any duplicate-title candidates (keep the earliest)
+        seen: set[str] = set()
+        dups: list[int] = []
+        for c in db.execute(select(Candidate).order_by(Candidate.id)).scalars().all():
+            key = (c.title or "").strip().lower()
+            (dups.append(c.id) if key in seen else seen.add(key))
+        if dups:
+            for model in (CandidateMessage, CandidateAssignee, CandidateLabel):
+                db.execute(delete(model).where(model.candidate_id.in_(dups)))
+            db.execute(delete(Candidate).where(Candidate.id.in_(dups)))
+            db.commit()
+            print(f"removed {len(dups)} duplicate-title candidate(s)")
+
+        # 5. mark the re-armed messages 'analyzed' so the next sync won't re-extract them
+        for chat in db.execute(select(Chat)).scalars().all():
+            db.query(Message).filter(
+                Message.chat_id == chat.id, Message.processing_status == MessageProcessingStatus.normalized
+            ).update({Message.processing_status: MessageProcessingStatus.analyzed})
+        db.commit()
+        print(f"done — {total - len(dups)} candidate(s) in the review queue")
 
 
 if __name__ == "__main__":
