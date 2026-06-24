@@ -7,16 +7,29 @@ from __future__ import annotations
 
 import datetime as dt
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
-SYSTEM = """You extract actionable WORK ITEMS from a window of team chat messages.
+SYSTEM = """You extract WORK ITEMS from a window of team chat messages.
 
-Precision over recall: a FALSE work item is worse than a missed weak signal. If a window is just
-chatter, return an empty candidates list.
+Capture every message that represents work the team should track, across these five types:
+- task: something concrete to be done ("ship the report", "fix the login bug").
+- request: someone asks for something to be done or reviewed ("can someone review X?",
+  "please take a look at Y") — count it even when no owner is named.
+- reminder: a time-bound nudge ("don't forget the standup at 10am", "remember to send the invoice").
+- idea: a suggestion or proposal worth keeping ("what if we added dark mode?").
+- knowledge: a decision, fact, or piece of information worth documenting for later.
 
-Active types: task, request, reminder, idea, knowledge.
+Be inclusive across these five types. A clear request, reminder, or idea IS a work item even if it
+has no assignee and no due date — do NOT drop it; instead leave that field null and add the missing
+piece ("assignee", "due_date", "priority") to missing_fields. Use a lower item confidence for softer
+or implicit signals so a human can review them.
+
+But IGNORE pure social chatter, greetings, reactions, jokes, emoji-only messages, and
+gibberish/keyboard-mash — for a window that is only that, return an empty candidates list. A false
+work item from real noise is still bad; the goal is to catch genuine signals, not to invent them.
+
 Priority: one of critical, high, medium, low, or null. Use "critical" ONLY for an explicit blocker,
-urgency, risk of failure, or business-critical action. If priority is not stated and unclear, use null.
+urgency, risk of failure, or business-critical action. If priority is not stated, use null.
 Assignees: choose ONLY from the provided assignee list (match by username/alias/name). Multiple are
 allowed. If you cannot determine an assignee, leave the array empty and add "assignee" to missing_fields.
 Due date: convert relative dates ("Friday", "tomorrow") into an ISO-8601 calendar date using the given

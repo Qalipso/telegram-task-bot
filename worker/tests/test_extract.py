@@ -60,7 +60,7 @@ def test_creates_candidate_with_links_and_ai_run(db):
     assert len(cas) == 1 and cas[0].assignee_id == bob.id and cas[0].is_primary
     runs = db.query(m.AiRun).all()
     assert len(runs) == 1 and runs[0].status == "success" and runs[0].run_type == m.AiRunType.extraction
-    assert runs[0].input_hash and runs[0].prompt_version == "v1"
+    assert runs[0].input_hash and runs[0].prompt_version == "v2"
     assert db.query(m.WorkItem).count() == 0  # AI never creates work items
 
 

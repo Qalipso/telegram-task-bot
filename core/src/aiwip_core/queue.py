@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+import redis
+
 from aiwip_core.redis_client import get_redis
 
 JOBS_KEY = "aiwip:jobs"
@@ -18,7 +20,10 @@ def enqueue(job: dict) -> None:
 
 
 def dequeue(timeout: int = 5) -> dict | None:
-    res = get_redis().brpop(JOBS_KEY, timeout=timeout)
+    try:
+        res = get_redis().brpop(JOBS_KEY, timeout=timeout)
+    except redis.exceptions.TimeoutError:
+        return None  # idle BRPOP socket timeout — treat as "no job available"
     if res is None:
         return None
     return json.loads(res[1])

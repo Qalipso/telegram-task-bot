@@ -2,7 +2,7 @@
 
 Logs every call to ai_runs (D23 input_hash). Invalid/odd output is logged and skipped — it never
 crashes the pipeline (llm-extraction-spec "Error Handling"). Confidence bands (item):
->=0.90 strong (status=new), 0.70–0.90 needs_review, <0.70 skipped.
+>=0.90 strong (status=new), 0.60–0.90 needs_review, <0.60 skipped (recall-tuned in prompt v2).
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def _now() -> dt.datetime:
 def _status_for(item_confidence: float) -> CandidateStatus | None:
     if item_confidence >= 0.90:
         return CandidateStatus.new
-    if item_confidence >= 0.70:
+    if item_confidence >= 0.60:
         return CandidateStatus.needs_review
     return None  # too weak — skip
 
