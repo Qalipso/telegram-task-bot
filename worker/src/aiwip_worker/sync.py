@@ -12,10 +12,13 @@ import datetime as dt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from aiwip_core import audit
 from aiwip_core.logging import get_logger
 from aiwip_core.models import (
     AttachmentProcessingStatus,
     AttachmentType,
+    AuditAction,
+    AuditEntityType,
     Chat,
     Message,
     MessageAttachment,
@@ -60,7 +63,9 @@ def run_sync(
         created_by_user_id=created_by_user_id,
     )
     db.add(run)
+    db.flush()
     state = get_or_create_sync_state(db, chat.id)
+    audit.record_audit(db, created_by_user_id, AuditAction.sync_started, AuditEntityType.sync_run, run.id)
     db.commit()  # persist the running run + state baseline before doing fallible work
 
     try:
@@ -116,6 +121,10 @@ def run_sync(
         run.messages_read = len(fetched)
         run.messages_saved = saved
         run.finished_at = _utcnow()
+        audit.record_audit(
+            db, created_by_user_id, AuditAction.sync_finished, AuditEntityType.sync_run, run.id,
+            after={"status": "success", "messages_read": len(fetched), "messages_saved": saved},
+        )
         db.commit()
         logger.info("sync ok chat=%s read=%s saved=%s", chat.id, len(fetched), saved)
         return run
@@ -125,6 +134,10 @@ def run_sync(
         run.error_message = str(exc)
         run.finished_at = _utcnow()
         state.last_error = str(exc)
+        audit.record_audit(
+            db, created_by_user_id, AuditAction.sync_finished, AuditEntityType.sync_run, run.id,
+            after={"status": "failed", "error": str(exc)},
+        )
         db.commit()
         logger.warning("sync failed chat=%s err=%s", chat.id, exc)
         return run

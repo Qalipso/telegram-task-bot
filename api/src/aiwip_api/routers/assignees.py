@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from aiwip_api import auth
 from aiwip_api.schemas import AssigneeOut, CreateAssigneeRequest, UpdateAssigneeRequest
-from aiwip_core.models import Assignee, User
+from aiwip_core import audit
+from aiwip_core.models import Assignee, AuditAction, AuditEntityType, User
 
 router = APIRouter(prefix="/api/assignees", tags=["assignees"])
 
@@ -27,7 +28,7 @@ def list_assignees(
 @router.post("", response_model=AssigneeOut, status_code=status.HTTP_201_CREATED)
 def create_assignee(
     payload: CreateAssigneeRequest,
-    _admin: User = Depends(auth.require_admin),
+    admin: User = Depends(auth.require_admin),
     db: Session = Depends(auth.get_db),
 ) -> Assignee:
     assignee = Assignee(
@@ -39,6 +40,11 @@ def create_assignee(
         is_active=payload.is_active,
     )
     db.add(assignee)
+    db.flush()
+    audit.record_audit(
+        db, admin.id, AuditAction.assignee_created, AuditEntityType.assignee, assignee.id,
+        after={"display_name": assignee.display_name, "telegram_username": assignee.telegram_username},
+    )
     db.commit()
     db.refresh(assignee)
     return assignee
@@ -48,14 +54,19 @@ def create_assignee(
 def update_assignee(
     assignee_id: int,
     payload: UpdateAssigneeRequest,
-    _admin: User = Depends(auth.require_admin),
+    admin: User = Depends(auth.require_admin),
     db: Session = Depends(auth.get_db),
 ) -> Assignee:
     assignee = db.get(Assignee, assignee_id)
     if assignee is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assignee not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(assignee, field, value)
+    audit.record_audit(
+        db, admin.id, AuditAction.assignee_updated, AuditEntityType.assignee, assignee.id,
+        after={k: (v if not isinstance(v, list) else list(v)) for k, v in changes.items()},
+    )
     db.commit()
     db.refresh(assignee)
     return assignee

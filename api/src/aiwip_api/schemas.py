@@ -6,8 +6,11 @@ import datetime as dt
 from pydantic import BaseModel, ConfigDict
 
 from aiwip_core.models import (
+    AuditAction,
+    AuditEntityType,
     CandidateStatus,
     CandidateType,
+    EvaluationResult,
     Priority,
     UserRole,
     WorkItemStatus,
@@ -121,3 +124,45 @@ class LabelOut(BaseModel):
 
 class AssignLabelRequest(BaseModel):
     label_id: int
+
+
+class AuditOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    actor_user_id: int | None = None
+    action: AuditAction
+    entity_type: AuditEntityType
+    entity_id: int | None = None
+    before_value: dict | None = None
+    after_value: dict | None = None
+    created_at: dt.datetime
+
+
+class CreateEvaluationCaseRequest(BaseModel):
+    candidate_id: int | None = None  # derive input/expected from a reviewed candidate
+    source_message_ids: list[int] | None = None
+    input_payload: dict | None = None
+    expected_output: dict | None = None
+    actual_output: dict | None = None
+    result: EvaluationResult = EvaluationResult.pending
+    score: float | None = None
+    comments: str | None = None
+    model_name: str | None = None
+    prompt_version: str | None = None
+
+
+class EvaluationCaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_message_ids: list[int] | None = None
+    input_payload: dict | None = None
+    expected_output: dict | None = None
+    actual_output: dict | None = None
+    result: EvaluationResult
+    score: float | None = None
+    comments: str | None = None
+    model_name: str | None = None
+    prompt_version: str | None = None
+    created_at: dt.datetime

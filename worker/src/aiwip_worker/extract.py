@@ -12,11 +12,14 @@ import hashlib
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from aiwip_core import audit
 from aiwip_core.logging import get_logger
 from aiwip_core.models import (
     AiRun,
     AiRunType,
     Assignee,
+    AuditAction,
+    AuditEntityType,
     Candidate,
     CandidateAssignee,
     CandidateMessage,
@@ -154,6 +157,7 @@ def extract_candidates(
                 candidate.missing_fields = [*candidate.missing_fields, "assignee"]
             if candidate.status == CandidateStatus.new:
                 candidate.status = CandidateStatus.needs_review
+        audit.record_audit(db, None, AuditAction.candidate_created, AuditEntityType.candidate, candidate.id)
         created.append(candidate)
 
     db.commit()
