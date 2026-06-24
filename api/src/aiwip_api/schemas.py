@@ -100,3 +100,24 @@ class WorkItemOut(BaseModel):
     due_date: dt.datetime | None = None
     status: WorkItemStatus
     source_candidate_id: int
+
+
+class StatusChangeRequest(BaseModel):
+    status: WorkItemStatus
+
+
+class CreateLabelRequest(BaseModel):
+    name: str
+    color: str | None = None
+
+
+class LabelOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    color: str | None = None
+
+
+class AssignLabelRequest(BaseModel):
+    label_id: int

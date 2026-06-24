@@ -14,8 +14,10 @@ from aiwip_core.logging import get_logger
 from aiwip_api.routers import assignees as assignees_router
 from aiwip_api.routers import auth as auth_router
 from aiwip_api.routers import candidates as candidates_router
+from aiwip_api.routers import labels as labels_router
 from aiwip_api.routers import sync as sync_router
 from aiwip_api.routers import users as users_router
+from aiwip_api.routers import work_items as work_items_router
 
 logger = get_logger("aiwip.api")
 
@@ -26,6 +28,8 @@ app.include_router(users_router.router)
 app.include_router(sync_router.router)
 app.include_router(assignees_router.router)
 app.include_router(candidates_router.router)
+app.include_router(work_items_router.router)
+app.include_router(labels_router.router)
 
 
 @app.get("/health")
