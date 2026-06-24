@@ -90,6 +90,7 @@ class UpdateCandidateRequest(BaseModel):
     candidate_type: CandidateType | None = None
     priority: Priority | None = None
     due_date: dt.datetime | None = None
+    assignee_ids: list[int] | None = None  # set/replace the responsible person(s); first is primary
 
 
 class WorkItemOut(BaseModel):

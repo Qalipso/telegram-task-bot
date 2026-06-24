@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import { apiGet, apiPost, ApiError } from "../lib/api";
-import { PriorityBadge, TypeBadge, fmtDate, WORK_STATUSES, STATUS_LABEL, COLUMN_ACCENT } from "../components/ui";
-import type { Board, WorkItem, WorkItemStatus } from "../lib/types";
+import { PriorityBadge, TypeBadge, StatusBadge, fmtDate, WORK_STATUSES, STATUS_LABEL, COLUMN_ACCENT } from "../components/ui";
+import type { Board, WorkItem, WorkItemStatus, WorkItemDetail } from "../lib/types";
 
 export default function BoardPage() {
   return <AppShell><KanbanBoard /></AppShell>;
@@ -14,6 +14,7 @@ function KanbanBoard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<WorkItemStatus | null>(null);
+  const [selected, setSelected] = useState<WorkItemDetail | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -40,6 +41,11 @@ function KanbanBoard() {
       setError(e instanceof ApiError ? e.message : "Status change failed.");
       load();
     }
+  }
+
+  async function open(id: number) {
+    try { setSelected(await apiGet<WorkItemDetail>(`/api/work-items/${id}`)); }
+    catch (e) { setError(e instanceof ApiError ? e.message : "Failed to load work item."); }
   }
 
   const total = board ? Object.values(board.columns).reduce((n, c) => n + c.length, 0) : 0;
@@ -90,6 +96,7 @@ function KanbanBoard() {
                       key={wi.id}
                       className="wi-card"
                       draggable
+                      onClick={() => open(wi.id)}
                       onDragStart={(e) => e.dataTransfer.setData("text/plain", String(wi.id))}
                     >
                       <div className="title">{wi.title || <span className="faint">untitled</span>}</div>
@@ -105,6 +112,7 @@ function KanbanBoard() {
                           style={{ width: "auto", padding: "3px 6px", fontSize: 12, marginLeft: "auto" }}
                           value={wi.status}
                           aria-label={`Status for work item ${wi.id}`}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={(e) => move(wi, e.target.value as WorkItemStatus)}
                         >
                           {WORK_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
@@ -118,6 +126,67 @@ function KanbanBoard() {
           })}
         </div>
       )}
+
+      {selected && (
+        <WorkItemDrawer
+          detail={selected}
+          onClose={() => setSelected(null)}
+          onChanged={(updated) => { setSelected(updated); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function WorkItemDrawer({ detail, onClose, onChanged }: {
+  detail: WorkItemDetail; onClose: () => void; onChanged: (d: WorkItemDetail) => void;
+}) {
+  const wi = detail.work_item;
+  const [busy, setBusy] = useState(false);
+
+  async function changeStatus(to: WorkItemStatus) {
+    if (to === wi.status) return;
+    setBusy(true);
+    try {
+      await apiPost(`/api/work-items/${wi.id}/status`, { status: to });
+      onChanged({ ...detail, work_item: { ...wi, status: to } });
+    } catch { setBusy(false); }
+  }
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="dh">
+          <StatusBadge status={wi.status} />
+          <h2 style={{ flex: 1 }}>WI-{wi.id}</h2>
+          <button className="btn ghost sm" onClick={onClose}>✕</button>
+        </div>
+        <div className="db">
+          <h3>{wi.title || <span className="faint">untitled</span>}</h3>
+          {wi.summary && <div className="muted">{wi.summary}</div>}
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            <TypeBadge type={wi.type} />
+            <PriorityBadge priority={wi.priority} />
+            {wi.due_date && <span className="badge">due {fmtDate(wi.due_date)}</span>}
+          </div>
+          <div className="kv">
+            <span className="k">Status</span>
+            <span>
+              <select className="select" style={{ width: "auto" }} value={wi.status} disabled={busy}
+                onChange={(e) => changeStatus(e.target.value as WorkItemStatus)}>
+                {WORK_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+              </select>
+            </span>
+            <span className="k">Assignees</span>
+            <span>{detail.assignees.length
+              ? detail.assignees.map((a) => `${a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}${a.is_primary ? " (primary)" : ""}`).join(", ")
+              : <span className="faint">unassigned</span>}</span>
+            <span className="k">Labels</span>
+            <span>{detail.labels.length ? detail.labels.map((l) => l.name).join(", ") : <span className="faint">none</span>}</span>
+            <span className="k">From candidate</span><span className="mono">#{wi.source_candidate_id}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

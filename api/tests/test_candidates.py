@@ -47,6 +47,24 @@ def test_list_and_detail(client, db):
     assert msg["text"] == "do x" and msg["role"] == "primary" and msg["external_message_id"] == 1
 
 
+def test_edit_assigns_responsible_and_syncs_missing_fields(client, db):
+    _login(client, db, m.UserRole.admin)
+    cand = _seed_candidate(db)  # seeded with Bob assigned, missing_fields=[]
+    bob = db.query(m.Assignee).first()
+
+    # clear the responsible person -> assignee re-flagged missing
+    assert client.patch(f"/api/candidates/{cand.id}", json={"assignee_ids": []}).status_code == 200
+    detail = client.get(f"/api/candidates/{cand.id}").json()
+    assert detail["assignees"] == [] and "assignee" in detail["candidate"]["missing_fields"]
+
+    # assign a responsible person -> flag cleared, name available
+    client.patch(f"/api/candidates/{cand.id}", json={"assignee_ids": [bob.id]})
+    detail = client.get(f"/api/candidates/{cand.id}").json()
+    assert len(detail["assignees"]) == 1 and detail["assignees"][0]["assignee_id"] == bob.id
+    assert detail["assignees"][0]["display_name"] == "Bob"
+    assert "assignee" not in (detail["candidate"]["missing_fields"] or [])
+
+
 def test_edit_sets_edited_and_audits(client, db):
     _login(client, db, m.UserRole.admin)
     cand = _seed_candidate(db)

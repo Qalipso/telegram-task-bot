@@ -74,13 +74,25 @@ def board(user: User = Depends(auth.get_current_user), db: Session = Depends(aut
 @router.get("/{work_item_id}")
 def get_work_item(work_item_id: int, user: User = Depends(auth.get_current_user), db: Session = Depends(auth.get_db)) -> dict:
     wi = _get_visible_or_404(db, user, work_item_id)
-    assignees = db.execute(select(WorkItemAssignee).where(WorkItemAssignee.work_item_id == wi.id)).scalars().all()
+    assignees = db.execute(
+        select(WorkItemAssignee, Assignee)
+        .join(Assignee, Assignee.id == WorkItemAssignee.assignee_id)
+        .where(WorkItemAssignee.work_item_id == wi.id)
+    ).all()
     labels = db.execute(
         select(Label).join(WorkItemLabel, WorkItemLabel.label_id == Label.id).where(WorkItemLabel.work_item_id == wi.id)
     ).scalars().all()
     return {
         "work_item": WorkItemOut.model_validate(wi).model_dump(),
-        "assignees": [{"assignee_id": a.assignee_id, "is_primary": a.is_primary} for a in assignees],
+        "assignees": [
+            {
+                "assignee_id": wa.assignee_id,
+                "is_primary": wa.is_primary,
+                "display_name": asg.display_name,
+                "telegram_username": asg.telegram_username,
+            }
+            for wa, asg in assignees
+        ],
         "labels": [{"id": label.id, "name": label.name} for label in labels],
     }
 

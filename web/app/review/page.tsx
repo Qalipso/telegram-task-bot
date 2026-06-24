@@ -6,7 +6,7 @@ import {
   PriorityBadge, TypeBadge, StatusBadge, ConfidenceBar, MissingFields,
   fmtDate, fmtDateTime, CANDIDATE_STATUSES, STATUS_LABEL, PRIORITY_LABEL,
 } from "../components/ui";
-import type { Candidate, CandidateDetail, CandidateType, Priority } from "../lib/types";
+import type { Assignee, Candidate, CandidateDetail, CandidateType, Priority } from "../lib/types";
 
 const TYPES: CandidateType[] = ["task", "request", "reminder", "idea", "knowledge"];
 const PRIORITIES: Priority[] = ["high", "medium", "low"];
@@ -21,6 +21,7 @@ function Review() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<CandidateDetail | null>(null);
+  const [assignees, setAssignees] = useState<Assignee[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,6 +39,7 @@ function Review() {
   }, [filter]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { apiGet<Assignee[]>("/api/assignees").then(setAssignees).catch(() => {}); }, []);
 
   async function open(id: number) {
     setSelected(await apiGet<CandidateDetail>(`/api/candidates/${id}`));
@@ -102,6 +104,7 @@ function Review() {
       {selected && (
         <CandidateDrawer
           detail={selected}
+          assignees={assignees}
           onClose={() => setSelected(null)}
           onChanged={() => { setSelected(null); load(); }}
         />
@@ -110,8 +113,8 @@ function Review() {
   );
 }
 
-function CandidateDrawer({ detail, onClose, onChanged }: {
-  detail: CandidateDetail; onClose: () => void; onChanged: () => void;
+function CandidateDrawer({ detail, assignees, onClose, onChanged }: {
+  detail: CandidateDetail; assignees: Assignee[]; onClose: () => void; onChanged: () => void;
 }) {
   const c = detail.candidate;
   const locked = c.status === "approved" || c.status === "rejected";
@@ -120,6 +123,9 @@ function CandidateDrawer({ detail, onClose, onChanged }: {
   const [type, setType] = useState<CandidateType>(c.candidate_type);
   const [priority, setPriority] = useState<string>(c.priority ?? "");
   const [due, setDue] = useState<string>(c.due_date ? c.due_date.slice(0, 10) : "");
+  const [assigneeId, setAssigneeId] = useState<string>(
+    (detail.assignees.find((a) => a.is_primary) ?? detail.assignees[0])?.assignee_id?.toString() ?? "",
+  );
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
@@ -134,6 +140,7 @@ function CandidateDrawer({ detail, onClose, onChanged }: {
       title, summary, candidate_type: type,
       priority: priority || null,
       due_date: due ? `${due}T00:00:00Z` : null,
+      assignee_ids: assigneeId ? [Number(assigneeId)] : [],
     });
     onChanged();
   });
@@ -183,13 +190,20 @@ function CandidateDrawer({ detail, onClose, onChanged }: {
             </label>
           </div>
 
+          <label className="field">Assignee <span className="faint" style={{ fontWeight: 400 }}>(responsible person)</span>
+            <select className="select" value={assigneeId} disabled={locked} onChange={(e) => setAssigneeId(e.target.value)}>
+              <option value="">— unassigned —</option>
+              {assignees.filter((a) => a.is_active || String(a.id) === assigneeId).map((a) => (
+                <option key={a.id} value={a.id}>{a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.id}`)}</option>
+              ))}
+            </select>
+          </label>
+
           <MissingFields fields={c.missing_fields} />
 
           <div>
             <div className="kv">
               <span className="k">Confidence</span><ConfidenceBar value={c.task_confidence} />
-              <span className="k">Assignees</span>
-              <span>{detail.assignees.length ? detail.assignees.map((a) => `${a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}${a.is_primary ? " (primary)" : ""}`).join(", ") : <span className="faint">unassigned</span>}</span>
               <span className="k">Created</span><span className="muted">{fmtDateTime(c.created_at)}</span>
             </div>
           </div>

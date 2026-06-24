@@ -46,6 +46,18 @@ def _get_or_404(db: Session, candidate_id: int) -> Candidate:
     return candidate
 
 
+def _set_candidate_assignees(db: Session, candidate: Candidate, assignee_ids: list[int]) -> None:
+    """Replace the candidate's responsible person(s) (first id = primary) and keep the
+    'assignee' missing-field flag in sync."""
+    db.query(CandidateAssignee).filter_by(candidate_id=candidate.id).delete()
+    for i, aid in enumerate(assignee_ids):
+        db.add(CandidateAssignee(candidate_id=candidate.id, assignee_id=aid, is_primary=(i == 0)))
+    missing = [f for f in (candidate.missing_fields or []) if f != "assignee"]
+    if not assignee_ids:
+        missing.append("assignee")
+    candidate.missing_fields = missing
+
+
 @router.get("", response_model=list[CandidateOut])
 def list_candidates(
     status_filter: CandidateStatus | None = Query(None, alias="status"),
@@ -110,8 +122,12 @@ def edit_candidate(
     if candidate.status == CandidateStatus.approved:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cannot edit an approved candidate")
     before = _editable_snapshot(candidate)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    assignee_ids = data.pop("assignee_ids", None)
+    for field, value in data.items():
         setattr(candidate, field, value)
+    if assignee_ids is not None:
+        _set_candidate_assignees(db, candidate, assignee_ids)
     candidate.status = CandidateStatus.edited
     db.flush()
     audit.record_audit(
