@@ -1,0 +1,19 @@
+# Development Dockerfile for web with Next.js dev mode
+FROM node:20-alpine
+
+ENV NODE_ENV=development
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+
+RUN addgroup -g 1001 appuser && adduser -D -u 1001 -G appuser appuser
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 3000
+CMD ["npm", "run", "dev"]

@@ -1,0 +1,105 @@
+name: aiwip-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aiwip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiwip}
+      POSTGRES_DB: ${POSTGRES_DB:-aiwip}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiwip} -d ${POSTGRES_DB:-aiwip}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile.dev
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aiwip}:${POSTGRES_PASSWORD:-aiwip}@postgres:5432/${POSTGRES_DB:-aiwip}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api/src:/app/api/src:cached
+      - ./core/src:/app/core/src:cached
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - path: ./api/src
+          action: sync
+        - path: ./core/src
+          action: sync
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile.dev
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aiwip}:${POSTGRES_PASSWORD:-aiwip}@postgres:5432/${POSTGRES_DB:-aiwip}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./worker/src:/app/worker/src:cached
+      - ./core/src:/app/core/src:cached
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - path: ./worker/src
+          action: sync
+        - path: ./core/src
+          action: sync
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    environment:
+      API_BASE: http://api:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./web:/app:cached
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    develop:
+      watch:
+        - path: ./web
+          action: sync
+          ignore:
+            - node_modules
+            - .next
+
+volumes:
+  pgdata:
+  redisdata:

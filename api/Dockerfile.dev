@@ -1,0 +1,25 @@
+# Development Dockerfile for API with hot-reload
+FROM python:3.12-alpine
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PATH=/app/.local/bin:$PATH
+
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev python3-dev
+
+RUN addgroup -g 1000 appuser && adduser -D -u 1000 -G appuser appuser
+
+WORKDIR /app
+
+# Install core and api in editable mode for development
+COPY core ./core
+RUN pip install --user --no-cache-dir -e ./core
+
+COPY api ./api
+RUN pip install --user --no-cache-dir -e ./api
+
+USER appuser
+
+EXPOSE 8000
+# Use --reload for auto-restart on file changes
+CMD ["uvicorn", "aiwip_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

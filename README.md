@@ -59,11 +59,16 @@ Then connect Telegram and run a first sync — see [`docs/RUNNING.md`](docs/RUNN
 The `web` service is a complete operator console (Next.js 16 / React 19) with five screens:
 
 1. **Login** — email + password; on success the browser holds an httpOnly session cookie.
-2. **Review queue** — candidate list with a status filter and a detail drawer showing the
-   source-message text; edit, approve (→ WorkItem), or reject each candidate.
+2. **Review queue** — candidates that still need triage (defaults to a *To review* filter, hiding
+   already-approved/rejected). Each opens a detail drawer: edit title/summary/type/priority/due date,
+   **assign a responsible person** from the finite list, and approve (→ WorkItem) or reject. Imprecise
+   or missing fields are highlighted (`missing: assignee` / `due date` / `priority`) and the
+   source-message text is shown.
 3. **Board** — a 9-column Kanban (`inbox → backlog → ready → in_progress → blocked → review → done →
-   cancelled → archived`) with drag-and-drop plus a per-card status menu.
-4. **Assignees** — admin management of the finite assignee list the AI resolver matches against.
+   cancelled → archived`) with drag-and-drop plus a per-card status menu; **click a card** to open a
+   work-item detail drawer (status, assignees, labels, source candidate).
+4. **Assignees** — admin management of the finite responsible list (display name, **Telegram user ID**
+   binding, aliases, active/inactive) the AI resolver matches against.
 5. **Sync** — dashboard of sync runs/state with a **Run sync now** button.
 
 The browser never talks to the API directly. The UI calls a **same-origin Next.js proxy** at
@@ -97,16 +102,17 @@ a logged-in session; keep it secret. Full reference (incl. defaults) is in
 ## Pipeline & scheduling
 
 - A sync runs the **full pipeline**: `sync → normalize → context → OpenAI extract` via
-  `run_pipeline()`. Extraction is gated on `messages_saved > 0`, and an extraction failure is logged
-  but never fails the sync job.
+  `run_pipeline()`. Extraction is gated on `messages_saved > 0` and only considers messages **not yet
+  analyzed**, so re-syncing never re-emits a task for a message that already became a candidate (no
+  duplicate candidates). An extraction failure is logged but never fails the sync job.
 - The worker's **scheduler** enqueues a sync for every active chat every **6 hours**
   (`sync_interval_seconds=21600`). For immediate ingestion, trigger a sync on demand:
   `POST /api/sync/run` (admin), `python scripts/sync_once.py`, or the **Run sync now** button.
-- **AI:** OpenAI with Structured Outputs (a strict JSON schema), prompt version **v2** (recall-tuned:
+- **AI:** OpenAI with Structured Outputs (a strict JSON schema), prompt version **v3** (recall-tuned:
   captures `task` / `request` / `reminder` / `idea` / `knowledge`; ignores chatter and gibberish).
-  Per-item **confidence bands**: `≥ 0.90` → candidate status `new`; `0.60–0.90` → `needs_review`;
-  `< 0.60` → skipped. The AI only ever creates **Candidates**; a human approval promotes a Candidate
-  to a **WorkItem**.
+  Priority is **High / Mid / Low**. Per-item **confidence bands**: `≥ 0.90` → candidate status `new`;
+  `0.60–0.90` → `needs_review`; `< 0.60` → skipped. The AI only ever creates **Candidates**; a human
+  approval promotes a Candidate to a **WorkItem** (carrying its assignee).
 
 ## API (admin/operator surface)
 
@@ -126,7 +132,7 @@ Full grouped reference with methods, roles, and curl examples: [`docs/INTEGRATIO
 - Monorepo: `core/` (shared) · `api/` · `worker/` · `web/`. Python services are editable-installable.
 - **Tests** (need Postgres + Redis on `localhost`; root `conftest.py` forces localhost):
   ```bash
-  python -m pytest          # 94 tests
+  python -m pytest          # 96 tests
   ```
 - **Migrations** (Alembic, in `core/`):
   ```bash
@@ -138,7 +144,7 @@ Full grouped reference with methods, roles, and curl examples: [`docs/INTEGRATIO
 
 ## Status & known limitations
 
-**Implemented & tested (94 tests, verified live):** Telegram sync (idempotent), normalization, context
+**Implemented & tested (96 tests, verified live):** Telegram sync (idempotent), normalization, context
 builder, OpenAI extraction (prompt v2 + confidence bands; candidates, never work items), full sync
 pipeline with gated extraction, candidate review → WorkItem promotion, Kanban board API, assignees +
 resolver, audit, evaluation foundation, Redis queue + 6h scheduler, Docker Compose, and the full

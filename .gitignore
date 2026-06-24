@@ -22,3 +22,6 @@ pgdata/
 
 # OS
 .DS_Store
+
+# TS build cache
+*.tsbuildinfo
