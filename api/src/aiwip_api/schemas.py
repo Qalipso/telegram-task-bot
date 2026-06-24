@@ -1,9 +1,18 @@
 """Pydantic request/response schemas for the API."""
 from __future__ import annotations
 
+import datetime as dt
+
 from pydantic import BaseModel, ConfigDict
 
-from aiwip_core.models import UserRole
+from aiwip_core.models import (
+    CandidateStatus,
+    CandidateType,
+    Priority,
+    UserRole,
+    WorkItemStatus,
+    WorkItemType,
+)
 
 
 class LoginRequest(BaseModel):
@@ -55,3 +64,39 @@ class AssigneeOut(BaseModel):
     aliases: list[str] | None = None
     is_active: bool
     user_id: int | None = None
+
+
+class CandidateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    candidate_type: CandidateType
+    title: str | None = None
+    summary: str | None = None
+    priority: Priority | None = None
+    due_date: dt.datetime | None = None
+    status: CandidateStatus
+    task_confidence: float | None = None
+    missing_fields: list[str] | None = None
+    created_at: dt.datetime
+
+
+class UpdateCandidateRequest(BaseModel):
+    title: str | None = None
+    summary: str | None = None
+    candidate_type: CandidateType | None = None
+    priority: Priority | None = None
+    due_date: dt.datetime | None = None
+
+
+class WorkItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: WorkItemType
+    title: str | None = None
+    summary: str | None = None
+    priority: Priority | None = None
+    due_date: dt.datetime | None = None
+    status: WorkItemStatus
+    source_candidate_id: int
