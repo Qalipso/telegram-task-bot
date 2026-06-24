@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiwip-core",
     "telethon>=1.36",
+    "openai>=1.40",
 ]
 
 [project.optional-dependencies]
