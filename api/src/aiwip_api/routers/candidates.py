@@ -21,6 +21,7 @@ from aiwip_core.models import (
     CandidateAssignee,
     CandidateMessage,
     CandidateStatus,
+    Message,
     User,
 )
 
@@ -65,12 +66,25 @@ def get_candidate(
         select(CandidateAssignee).where(CandidateAssignee.candidate_id == candidate_id)
     ).scalars().all()
     links = db.execute(
-        select(CandidateMessage).where(CandidateMessage.candidate_id == candidate_id)
-    ).scalars().all()
+        select(CandidateMessage, Message)
+        .join(Message, Message.id == CandidateMessage.message_id)
+        .where(CandidateMessage.candidate_id == candidate_id)
+        .order_by(Message.external_message_id)
+    ).all()
     return {
         "candidate": CandidateOut.model_validate(candidate).model_dump(),
         "assignees": [{"assignee_id": a.assignee_id, "is_primary": a.is_primary} for a in assignees],
-        "messages": [{"message_id": link.message_id, "role": link.role.value} for link in links],
+        "messages": [
+            {
+                "message_id": link.message_id,
+                "role": link.role.value,
+                "external_message_id": msg.external_message_id,
+                "sender": msg.sender_display_name or msg.sender_username,
+                "sent_at": msg.sent_at.isoformat() if msg.sent_at else None,
+                "text": msg.normalized_content or msg.text_content,
+            }
+            for link, msg in links
+        ],
     }
 
 

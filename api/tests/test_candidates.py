@@ -43,6 +43,8 @@ def test_list_and_detail(client, db):
     detail = client.get(f"/api/candidates/{cand.id}").json()
     assert detail["candidate"]["title"] == "Do X"
     assert len(detail["assignees"]) == 1 and len(detail["messages"]) == 1
+    msg = detail["messages"][0]
+    assert msg["text"] == "do x" and msg["role"] == "primary" and msg["external_message_id"] == 1
 
 
 def test_edit_sets_edited_and_audits(client, db):

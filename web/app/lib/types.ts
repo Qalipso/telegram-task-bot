@@ -28,10 +28,19 @@ export interface Candidate {
   created_at: string;
 }
 
+export interface CandidateMessage {
+  message_id: number;
+  role: string;
+  external_message_id: number;
+  sender: string | null;
+  sent_at: string | null;
+  text: string | null;
+}
+
 export interface CandidateDetail {
   candidate: Candidate;
   assignees: { assignee_id: number; is_primary: boolean }[];
-  messages: { message_id: number; role: string }[];
+  messages: CandidateMessage[];
 }
 
 export interface WorkItem {

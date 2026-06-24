@@ -201,7 +201,12 @@ function CandidateDrawer({ detail, onClose, onChanged }: {
             <div className="col" style={{ gap: 6 }}>
               {detail.messages.map((m) => (
                 <div key={m.message_id} className="msg-line">
-                  <span className="mono">message #{m.message_id}</span> · <span className="muted">{m.role}</span>
+                  <div className="row" style={{ gap: 6, marginBottom: 4 }}>
+                    <b>{m.sender || "unknown"}</b>
+                    <span className={`badge st st-${m.role}`}>{m.role}</span>
+                    <span className="faint right">{fmtDateTime(m.sent_at)}</span>
+                  </div>
+                  <div>{m.text ? m.text : <span className="faint">(no text content)</span>}</div>
                 </div>
               ))}
             </div>
