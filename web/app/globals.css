@@ -204,3 +204,26 @@ table.tbl tr.clickable:hover td { background: var(--surface-2); }
 .msg-line { padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12.5px; }
 .kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 13px; }
 .kv .k { color: var(--text-muted); font-weight: 600; }
+
+/* ---- responsive ------------------------------------------------------ */
+/* data-dense tables scroll horizontally inside their card instead of clipping */
+.card { overflow-x: auto; }
+table.tbl { min-width: 660px; }
+
+@media (max-width: 720px) {
+  .container { padding: 16px 12px 48px; }
+  .page-head { flex-wrap: wrap; row-gap: 4px; }
+  .page-head h1 { font-size: 20px; }
+  .toolbar { gap: 8px; }
+  table.tbl th, table.tbl td { padding: 9px 10px; }
+  .drawer { width: 100%; }
+  .drawer .db { padding: 16px; }
+  .kv { grid-template-columns: 110px 1fr; }
+  .column { flex-basis: 84vw; }            /* one board column at a time on phones */
+}
+
+@media (max-width: 420px) {
+  .nav { padding: 0 10px; }
+  .nav .brand { font-size: 14px; }
+  h1 { font-size: 19px; }
+}
