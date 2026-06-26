@@ -126,3 +126,36 @@ def test_links_only_related_messages_not_whole_window(db):
     linked_ext = {db.get(m.Message, link.message_id).external_message_id for link in links}
     assert linked_ext == {2, 3}  # message 1 (unrelated window chatter) is NOT linked
     assert all(link.role != m.CandidateMessageRole.context for link in links)
+
+
+def test_ambiguous_mention_links_none_and_needs_review(db):
+    """§6.1(A): a single mention matching 2+ active assignees must link NONE, flag the
+    'assignee' missing-field, and downgrade new -> needs_review (mirror the zero-match path)."""
+    chat = _chat(db, 908)
+    _msg(db, chat, 1)
+    # Two ACTIVE assignees that both normalize to "саша" (one via display_name, one via alias).
+    db.add(m.Assignee(display_name="Саша", telegram_username="sasha1"))
+    db.add(m.Assignee(display_name="Александр", telegram_username="sasha2", aliases=["Саша"]))
+    db.flush()
+    created = extract.extract_candidates(
+        db, chat.id, client=FakeLLMClient(_output(item=0.95, assignees=["Саша"], source=[1]))
+    )
+    assert len(created) == 1
+    c = created[0]
+    assert db.query(m.CandidateAssignee).filter_by(candidate_id=c.id).count() == 0
+    assert "assignee" in (c.missing_fields or [])
+    assert c.status == m.CandidateStatus.needs_review
+
+
+def test_unresolved_mention_text_preserved_on_candidate(db):
+    """§6.1(C): the raw unmatched mention is stored on Candidate.unresolved_mentions so a later
+    [Assign…] picker can name who was unmatched (today it lives only in ai_runs.output_payload)."""
+    chat = _chat(db, 909)
+    _msg(db, chat, 1)
+    created = extract.extract_candidates(
+        db, chat.id, client=FakeLLMClient(_output(item=0.95, assignees=["Сашка"], source=[1]))
+    )
+    c = created[0]
+    assert c.unresolved_mentions == ["Сашка"]
+    assert "assignee" in (c.missing_fields or [])
+    assert c.status == m.CandidateStatus.needs_review

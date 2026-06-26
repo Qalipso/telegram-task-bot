@@ -404,6 +404,7 @@ class Candidate(Base):
 
     reasoning_summary: Mapped[str | None] = mapped_column(Text)
     missing_fields: Mapped[list | None] = mapped_column(JSONB)  # D17
+    unresolved_mentions: Mapped[list | None] = mapped_column(JSONB)  # spec §6.1C: raw unmatched/ambiguous mention text
     context_summary: Mapped[str | None] = mapped_column(Text)   # D20
     model_name: Mapped[str | None] = mapped_column(String(128))
     prompt_version: Mapped[str | None] = mapped_column(String(64))

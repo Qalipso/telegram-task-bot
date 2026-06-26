@@ -154,7 +154,8 @@ def extract_candidates(
 
         _link_messages(db, candidate, c, ext_to_id)
         resolved = _link_assignees(db, candidate, c)
-        if not resolved:
+        # Downgrade when nothing linked OR any mention was ambiguous/unknown (precision-first).
+        if not resolved or candidate.unresolved_mentions:
             if "assignee" not in candidate.missing_fields:
                 candidate.missing_fields = [*candidate.missing_fields, "assignee"]
             if candidate.status == CandidateStatus.new:
@@ -188,13 +189,31 @@ def _link_messages(db, candidate, c, ext_to_id) -> None:
 
 
 def _link_assignees(db, candidate, c) -> bool:
+    """Link resolved assignees for this candidate, precision-first (spec §6.1A).
+
+    Per mention:
+      - exactly one active match  -> link it (first linked match is primary);
+      - 2+ matches (ambiguous)    -> link NONE for that mention; record the raw text as
+                                     unresolved so the candidate is downgraded + surfaced;
+      - 0 matches                 -> record the raw text as unresolved.
+    Returns True iff at least one assignee was linked.
+    """
     seen: set[int] = set()
+    unresolved: list[str] = []
     is_primary = True
     for mention in c.assignees:
-        for assignee in resolver.resolve_assignees(db, mention):
-            if assignee.id in seen:
-                continue
-            db.add(CandidateAssignee(candidate_id=candidate.id, assignee_id=assignee.id, confidence=c.confidence.assignee, is_primary=is_primary))
-            seen.add(assignee.id)
-            is_primary = False
+        matches = resolver.resolve_assignees(db, mention)
+        if len(matches) == 1:
+            assignee = matches[0]
+            if assignee.id not in seen:
+                db.add(CandidateAssignee(candidate_id=candidate.id, assignee_id=assignee.id, confidence=c.confidence.assignee, is_primary=is_primary))
+                seen.add(assignee.id)
+                is_primary = False
+        else:
+            # ambiguous (len>1) or unknown (len==0): never guess — preserve the raw mention.
+            if mention not in unresolved:
+                unresolved.append(mention)
+    if unresolved:
+        existing = list(candidate.unresolved_mentions or [])
+        candidate.unresolved_mentions = existing + [u for u in unresolved if u not in existing]
     return bool(seen)
