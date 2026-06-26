@@ -86,13 +86,4 @@ def test_run_pipeline_skips_extraction_when_nothing_saved(db):
     assert db.query(m.AiRun).filter_by(run_type=m.AiRunType.extraction).count() == 1  # extraction ran once
 
 
-def test_enqueue_scheduled_syncs_active_only(db, monkeypatch):
-    calls = []
-    monkeypatch.setattr("aiwip_core.queue.enqueue_sync", lambda *a, **k: calls.append((a, k)))
-    db.add(m.Chat(connector_type=m.ConnectorType.telegram, external_chat_id=111, is_active=True))
-    db.add(m.Chat(connector_type=m.ConnectorType.telegram, external_chat_id=222, is_active=False))
-    db.flush()
-    n = consumer.enqueue_scheduled_syncs(db)
-    assert n == 1  # inactive chat excluded
-    assert calls[0][0][0] == 111
-    assert calls[0][1].get("trigger") == "scheduled"
+# test_enqueue_scheduled_syncs_active_only removed in the Phase-6 cutover (scheduler deleted).

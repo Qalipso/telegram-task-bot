@@ -13,6 +13,8 @@ import redis
 from aiwip_core.redis_client import get_redis
 
 JOBS_KEY = "aiwip:jobs"
+NOTIFY_KEY = "aiwip:bot:notify"  # worker → bot: {"type":"bot.notify","candidate_id":int}
+BOTBUF_PREFIX = "aiwip:botbuf:"  # per-chat inbound buffer: aiwip:botbuf:{external_chat_id}
 
 
 def enqueue(job: dict) -> None:
@@ -37,3 +39,31 @@ def enqueue_sync(chat_id: int, trigger: str = "manual", user_id: int | None = No
     enqueue(
         {"type": "telegram.sync", "chat_id": chat_id, "trigger": trigger, "user_id": user_id, "attempts": attempts}
     )
+
+
+# --- bot-first capture layer: ingest buffer + worker→bot notify (spec §8) -------------------
+def botbuf_key(external_chat_id: int) -> str:
+    return f"{BOTBUF_PREFIX}{external_chat_id}"
+
+
+def push_botbuf(external_chat_id: int, record: dict) -> None:
+    """Append one inbound message record (forward-only). RPUSH keeps arrival order."""
+    get_redis().rpush(botbuf_key(external_chat_id), json.dumps(record))
+
+
+def botbuf_len(external_chat_id: int) -> int:
+    return int(get_redis().llen(botbuf_key(external_chat_id)))
+
+
+def enqueue_notify(candidate_id: int) -> None:
+    get_redis().lpush(NOTIFY_KEY, json.dumps({"type": "bot.notify", "candidate_id": candidate_id}))
+
+
+def dequeue_notify(timeout: int = 5) -> dict | None:
+    try:
+        res = get_redis().brpop(NOTIFY_KEY, timeout=timeout)
+    except redis.exceptions.TimeoutError:
+        return None
+    if res is None:
+        return None
+    return json.loads(res[1])

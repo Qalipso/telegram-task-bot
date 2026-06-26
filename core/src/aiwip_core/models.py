@@ -49,7 +49,8 @@ class UserRole(str, enum.Enum):
 
 
 class ConnectorType(str, enum.Enum):
-    telegram = "telegram"  # active (MVP)
+    telegram = "telegram"          # active (MVP) — Telethon, removed at the Phase-6 cutover
+    telegram_bot = "telegram_bot"  # active — Bot API forward-only capture (bot-first layer)
     slack = "slack"        # reserved/future
     email = "email"        # reserved/future
     whatsapp = "whatsapp"  # reserved/future
