@@ -31,3 +31,12 @@ def test_env_override_is_case_insensitive(monkeypatch):
     assert s.telegram_bot_token == "123:abc"
     assert s.bot_api_base == "http://localhost:8000"
     cfg.get_bot_settings.cache_clear()  # reset for other tests
+
+
+def test_review_chat_id_default_and_env_override(monkeypatch):
+    from aiwip_bot import config as cfg
+    assert cfg.BotSettings().bot_review_chat_id is None  # optional; no import-time error
+    monkeypatch.setenv("BOT_REVIEW_CHAT_ID", "424242")
+    cfg.get_bot_settings.cache_clear()
+    assert cfg.get_bot_settings().bot_review_chat_id == 424242
+    cfg.get_bot_settings.cache_clear()

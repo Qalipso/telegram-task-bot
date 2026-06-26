@@ -10,9 +10,10 @@ Auth model (consumed, verified):
 The cookie is a pure bearer token (design spec §1 / §6.4); we hold exactly one
 session per bot process and re-login transparently on 401.
 
-NOTE (Phase 2 interaction): the session cookie is Secure (spec §6.4), so over a
-plain-http hop httpx will not replay it. In production the bot↔API hop must be
-TLS; for a non-TLS internal hop, prefer the redeem token returned explicitly.
+NOTE: the session cookie is Secure (spec §6.4), so httpx's jar drops it over a plain-http hop.
+We parse the token from the login Set-Cookie header and replay it as an explicit Cookie header on
+every request (jar-independent). The server still issues Secure cookies, so prod/TLS/browser
+behavior is unchanged.
 """
 from __future__ import annotations
 
@@ -55,6 +56,7 @@ class ApiClient:
         self._password = password
         self._client = httpx.Client(base_url=base_url, transport=transport, timeout=timeout)
         self._logged_in = False
+        self._auth_cookie: dict[str, str] = {}  # explicit Cookie replay (jar drops Secure-over-http)
 
     # -- session lifecycle -------------------------------------------------
 
@@ -81,12 +83,27 @@ class ApiClient:
             raise ConversationalApiError(
                 f"Bot login failed (HTTP {resp.status_code}).", status_code=resp.status_code
             )
-        if COOKIE_NAME not in self._client.cookies:
+        token = self._extract_session_token(resp)
+        if not token:
             raise ConversationalApiError(
                 "Login succeeded but no session cookie was returned.", status_code=None
             )
+        self._auth_cookie = {COOKIE_NAME: token}
+        self._client.cookies.clear()  # rely on explicit replay only; the jar drops Secure-over-http
         self._logged_in = True
         logger.info("bot logged in as %s", self._email)
+
+    @staticmethod
+    def _extract_session_token(resp: httpx.Response) -> str | None:
+        # Parse the raw Set-Cookie header FIRST: httpx's jar refuses to store/return a Secure cookie
+        # over a plain-http response (the internal bot↔API hop), so resp.cookies is empty for exactly
+        # the case we must support. Fall back to the jar for a non-Secure cookie.
+        for header in resp.headers.get_list("set-cookie"):
+            for part in header.split(";"):
+                name, sep, value = part.strip().partition("=")
+                if sep and name == COOKIE_NAME and value:
+                    return value
+        return resp.cookies.get(COOKIE_NAME)
 
     def _ensure_logged_in(self) -> None:
         if not self._logged_in:
@@ -96,15 +113,24 @@ class ApiClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         self._ensure_logged_in()
-        resp = self._client.request(method, path, **kwargs)
+        resp = self._client.request(method, path, **self._with_auth(kwargs))
         if resp.status_code == 401:
             # Session expired / invalidated — re-login once and retry.
             logger.info("session expired; re-logging in")
             self._logged_in = False
             self.login()
-            resp = self._client.request(method, path, **kwargs)
+            resp = self._client.request(method, path, **self._with_auth(kwargs))
         self._raise_for_conversational(resp)
         return resp
+
+    def _with_auth(self, kwargs: dict) -> dict:
+        """Inject the session token as an explicit Cookie header (jar-independent replay)."""
+        merged = dict(kwargs)
+        headers = dict(merged.get("headers") or {})
+        if self._auth_cookie:
+            headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in self._auth_cookie.items())
+        merged["headers"] = headers
+        return merged
 
     @staticmethod
     def _raise_for_conversational(resp: httpx.Response) -> None:

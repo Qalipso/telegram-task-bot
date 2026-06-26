@@ -23,6 +23,10 @@ class BotSettings(BaseSettings):
     bot_api_base: str = "http://api:8000"
     bot_admin_email: str | None = None
     bot_admin_password: str | None = None
+    # Where confirm cards + digests are sent (admin DM / private review group). Required at runtime
+    # when a token is set — enforced in telegram_app.run_app, NOT here (this model loads at import).
+    bot_review_chat_id: int | None = None
+    bot_getupdates_timeout: int = 30
 
     # --- Loop cadences (spec §10). ---
     bot_poll_interval_seconds: int = 30

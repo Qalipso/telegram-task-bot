@@ -91,3 +91,26 @@ def test_request_relogins_once_on_401():
     assert me["id"] == 1
     assert state["logins"] == 2    # initial login + one re-login
     assert state["me_calls"] == 2  # the 401 call + the retried call
+
+
+def test_login_replays_secure_cookie_over_http():
+    """A Secure cookie (the API sets secure=True per §6.4) is dropped by httpx's jar over plain
+    http, so the client must parse the token from Set-Cookie and replay it as an explicit Cookie
+    header — otherwise every bot↔API call over http://api:8000 401s."""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/auth/login":
+            return httpx.Response(
+                200, json={"id": 1},
+                headers={"set-cookie": "aiwip_session=sec123; Path=/; Secure; HttpOnly"},
+            )
+        if request.url.path == "/api/auth/me":
+            seen["cookie"] = request.headers.get("cookie", "")
+            return httpx.Response(200, json={"id": 1})
+        return httpx.Response(404)
+
+    client = _client_with(handler)
+    client.me()
+    assert "aiwip_session=sec123" in seen["cookie"]
+    assert seen["cookie"].count("aiwip_session=") == 1  # exactly one (no jar+explicit duplicate)

@@ -34,3 +34,15 @@ def test_run_returns_immediately_without_token(monkeypatch):
     # once=True makes run() do a single readiness pass and return (no infinite loop).
     main.run(once=True, api_probe=lambda: True)
     config.get_bot_settings.cache_clear()
+
+
+def test_run_token_present_starts_app_via_injected_runner(monkeypatch):
+    """With a token, run() hands off to the app runner — exercised via an injected seam so the host
+    test never imports aiogram (which is absent on the Py3.14 host venv)."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    config.get_bot_settings.cache_clear()
+    calls = []
+    main.run(app_runner=lambda s: calls.append(s))
+    assert len(calls) == 1
+    assert calls[0].telegram_bot_token == "123:abc"
+    config.get_bot_settings.cache_clear()

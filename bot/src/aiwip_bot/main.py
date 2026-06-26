@@ -53,24 +53,31 @@ def run_once(api_probe: Callable[[], bool] = _default_api_probe) -> dict:
     return snapshot
 
 
-def run(once: bool = False, api_probe: Callable[[], bool] = _default_api_probe) -> None:
+def _default_app_runner(settings) -> None:
+    """Lazy: import aiogram only on the token path so the host/CI boot never needs it."""
+    from . import telegram_app
+
+    telegram_app.run_app(settings)
+
+
+def run(once: bool = False, api_probe: Callable[[], bool] = _default_api_probe, app_runner=None) -> None:
     """Main loop.
 
-    Phase 3: a readiness heartbeat. With a token configured the long-poll is
-    started by Phase 4; here we only log intent so the no-token path is proven
-    CI-safe. `once=True` runs a single readiness pass and returns (for tests).
+    Token-less: a CI-safe readiness heartbeat (`once=True` returns after one pass).
+    Token present: hand off to the aiogram app (the real getUpdates loop + bot.notify consumer).
+    `app_runner` is an injectable seam so host tests exercise the token path without importing aiogram.
     """
     s = get_bot_settings()
     if not s.telegram_bot_token:
         logger.info("TELEGRAM_BOT_TOKEN not set — long-poll disabled (CI-safe boot)")
-    else:
-        logger.info("TELEGRAM_BOT_TOKEN present — long-poll will start in Phase 4")
+        while True:
+            run_once(api_probe=api_probe)
+            if once:
+                return
+            time.sleep(s.bot_poll_interval_seconds)
 
-    while True:
-        run_once(api_probe=api_probe)
-        if once:
-            return
-        time.sleep(s.bot_poll_interval_seconds)
+    logger.info("TELEGRAM_BOT_TOKEN present — starting the bot app")
+    (app_runner or _default_app_runner)(s)
 
 
 if __name__ == "__main__":
