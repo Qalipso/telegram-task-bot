@@ -106,6 +106,35 @@ services:
           cpus: "0.25"
           memory: 128M
 
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aiwip}:${POSTGRES_PASSWORD:-aiwip}@postgres:5432/${POSTGRES_DB:-aiwip}
+      REDIS_URL: redis://redis:6379/0
+      BOT_API_BASE: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
   web:
     build:
       context: ./web
