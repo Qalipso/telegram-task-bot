@@ -156,7 +156,9 @@ class ApiClient:
 
     def list_assignees(self, active: bool = True) -> list[dict]:
         """GET /api/assignees?active=… — assignee picker source for the 'assign' card."""
-        return self._request("GET", "/api/assignees", params={"active": active}).json()
+        return self._request(
+            "GET", "/api/assignees", params={"active": "true" if active else "false"}
+        ).json()
 
     def close(self) -> None:
         self._client.close()
