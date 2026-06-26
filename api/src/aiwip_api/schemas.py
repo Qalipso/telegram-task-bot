@@ -203,3 +203,17 @@ class EvaluationCaseOut(BaseModel):
     model_name: str | None = None
     prompt_version: str | None = None
     created_at: dt.datetime
+
+
+class TelegramLinkStartResponse(BaseModel):
+    code: str
+    expires_in_seconds: int
+
+
+class TelegramRedeemRequest(BaseModel):
+    code: str
+    telegram_user_id: int  # data to WRITE after the code proves identity — NEVER trusted as identity
+
+
+class TelegramRedeemResponse(BaseModel):
+    status: str

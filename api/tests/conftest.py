@@ -13,6 +13,7 @@ from aiwip_api.main import app
 @pytest.fixture
 def client(db):
     app.dependency_overrides[get_db] = lambda: db
-    with TestClient(app) as test_client:
+    # https base URL so Secure session cookies (spec §6.4) are stored + replayed by the client.
+    with TestClient(app, base_url="https://testserver") as test_client:
         yield test_client
     app.dependency_overrides.clear()
