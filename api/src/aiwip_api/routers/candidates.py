@@ -48,7 +48,22 @@ def _get_or_404(db: Session, candidate_id: int) -> Candidate:
 
 def _set_candidate_assignees(db: Session, candidate: Candidate, assignee_ids: list[int]) -> None:
     """Replace the candidate's responsible person(s) (first id = primary) and keep the
-    'assignee' missing-field flag in sync."""
+    'assignee' missing-field flag in sync. Validates that every id is an ACTIVE assignee
+    (spec §6.1D): a stale/forged/inactive id is rejected with 422 before any mutation."""
+    if assignee_ids:
+        active_ids = set(
+            db.execute(
+                select(Assignee.id).where(
+                    Assignee.id.in_(assignee_ids), Assignee.is_active.is_(True)
+                )
+            ).scalars().all()
+        )
+        invalid = [aid for aid in assignee_ids if aid not in active_ids]
+        if invalid:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                f"Unknown or inactive assignee id(s): {invalid}",
+            )
     db.query(CandidateAssignee).filter_by(candidate_id=candidate.id).delete()
     for i, aid in enumerate(assignee_ids):
         db.add(CandidateAssignee(candidate_id=candidate.id, assignee_id=aid, is_primary=(i == 0)))

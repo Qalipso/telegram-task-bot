@@ -109,3 +109,56 @@ def test_role_enforcement(client, db):
 
 def test_unauthenticated(client):
     assert client.get("/api/candidates").status_code == 401
+
+
+def test_candidate_out_exposes_assignee_signal_and_confidences(client, db):
+    """§6.1B + §6.2: the detail payload carries the bot's branching signals — assignee_count,
+    assignee_ambiguous, unresolved_mentions, and the four per-field confidences."""
+    _login(client, db, m.UserRole.admin)
+    chat = m.Chat(connector_type=m.ConnectorType.telegram, external_chat_id=950)
+    db.add(chat)
+    db.flush()
+    cand = m.Candidate(
+        candidate_type=m.CandidateType.task, title="Do Y", summary="s",
+        status=m.CandidateStatus.needs_review, task_confidence=0.95,
+        context_confidence=0.8, assignee_confidence=0.7, priority_confidence=0.6,
+        due_date_confidence=0.5, missing_fields=["assignee"], unresolved_mentions=["Сашка"],
+    )
+    db.add(cand)
+    db.flush()
+    a1 = m.Assignee(display_name="Саша", telegram_username="sasha1")
+    a2 = m.Assignee(display_name="Александр", telegram_username="sasha2")
+    db.add(a1)
+    db.add(a2)
+    db.flush()
+    db.add(m.CandidateAssignee(candidate_id=cand.id, assignee_id=a1.id, is_primary=True))
+    db.add(m.CandidateAssignee(candidate_id=cand.id, assignee_id=a2.id, is_primary=False))
+    db.flush()
+
+    out = client.get(f"/api/candidates/{cand.id}").json()["candidate"]
+    assert out["assignee_count"] == 2
+    assert out["assignee_ambiguous"] is True  # 2+ linked OR unresolved mentions present
+    assert out["unresolved_mentions"] == ["Сашка"]
+    assert out["assignee_confidence"] == 0.7
+    assert out["priority_confidence"] == 0.6
+    assert out["due_date_confidence"] == 0.5
+    assert out["context_confidence"] == 0.8
+
+
+def test_patch_rejects_nonexistent_assignee_id(client, db):
+    """§6.1D: a stale/forged assignee id must be rejected (422), not silently linked."""
+    _login(client, db, m.UserRole.admin)
+    cand = _seed_candidate(db)  # seeded with Bob assigned
+    r = client.patch(f"/api/candidates/{cand.id}", json={"assignee_ids": [999999]})
+    assert r.status_code == 422, r.text
+
+
+def test_patch_rejects_inactive_assignee_id(client, db):
+    """§6.1D: an inactive assignee must not be assignable via the bot/admin PATCH."""
+    _login(client, db, m.UserRole.admin)
+    cand = _seed_candidate(db)
+    ghost = m.Assignee(display_name="Ghost", telegram_username="ghost", is_active=False)
+    db.add(ghost)
+    db.flush()
+    r = client.patch(f"/api/candidates/{cand.id}", json={"assignee_ids": [ghost.id]})
+    assert r.status_code == 422, r.text

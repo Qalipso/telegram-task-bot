@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from aiwip_core.models import (
     AuditAction,
@@ -80,8 +80,44 @@ class CandidateOut(BaseModel):
     due_date: dt.datetime | None = None
     status: CandidateStatus
     task_confidence: float | None = None
+    # §6.2 per-field confidences (give the bot a richer policy than status alone).
+    assignee_confidence: float | None = None
+    priority_confidence: float | None = None
+    due_date_confidence: float | None = None
+    context_confidence: float | None = None
     missing_fields: list[str] | None = None
+    # §6.1C: raw unmatched/ambiguous mention text, for the [Assign…] picker title.
+    unresolved_mentions: list[str] | None = None
     created_at: dt.datetime
+
+    # Populated from the ORM relationship Candidate.candidate_assignees; excluded from output.
+    # Reduced to a list of assignee ids so we can derive assignee_count without a nested schema.
+    candidate_assignees: list[int] = Field(default_factory=list, exclude=True)
+
+    @field_validator("candidate_assignees", mode="before")
+    @classmethod
+    def _coerce_assignee_rows(cls, v: object) -> list[int]:
+        """Accept the ORM list of CandidateAssignee rows (or any iterable) and reduce it to a
+        list of assignee ids, so model_validate(orm_candidate) populates it."""
+        if not v:
+            return []
+        ids: list[int] = []
+        for row in v:
+            aid = getattr(row, "assignee_id", None)
+            if aid is not None:
+                ids.append(aid)
+        return ids
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def assignee_count(self) -> int:
+        return len(self.candidate_assignees)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def assignee_ambiguous(self) -> bool:
+        """§6.1B: ambiguous if 2+ assignees are linked OR any mention went unresolved."""
+        return self.assignee_count > 1 or bool(self.unresolved_mentions)
 
 
 class UpdateCandidateRequest(BaseModel):
