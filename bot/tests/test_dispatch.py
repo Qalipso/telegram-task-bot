@@ -104,3 +104,22 @@ def test_dispatch_approve_denied_for_unlinked(db):
     api = FakeApi(_CAND)
     res = dispatch.dispatch_callback(db, api, cards.encode_callback("approve", 5), telegram_user_id=88888)
     assert res.did_act is False and api.approved == []
+
+
+def test_dispatch_handles_stale_candidate_gracefully(db):
+    """Approve on a card whose candidate was removed → calm denied result, never a crash."""
+    from aiwip_bot import dispatch, cards
+    from aiwip_bot.api_client import ConversationalApiError
+    from aiwip_core import models as m
+
+    u = m.User(email="adm@x.io", role=m.UserRole.admin)
+    db.add(u); db.flush()
+    db.add(m.Assignee(display_name="A", telegram_user_id=4242, user_id=u.id, is_active=True)); db.flush()
+
+    class _StaleApi:
+        def get_candidate(self, cid):
+            raise ConversationalApiError("That item no longer exists — it may have been removed.", status_code=404)
+
+    res = dispatch.dispatch_callback(db, _StaleApi(), cards.encode_callback("approve", 999), 4242)
+    assert res.did_act is False
+    assert "no longer exists" in res.text.lower()

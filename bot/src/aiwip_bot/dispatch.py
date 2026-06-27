@@ -14,6 +14,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from aiwip_bot import authz, cards, handlers
+from aiwip_bot.api_client import ConversationalApiError
 
 _INVALID_BUTTON = "That button is no longer valid."
 
@@ -35,7 +36,16 @@ def _open(db: Session, api, telegram_user_id: int, candidate_id: int) -> handler
 
 
 def dispatch_callback(db: Session, api, data: str, telegram_user_id: int) -> handlers.HandlerResult:
-    """Route one callback_data string to its handler. Never raises on bad input."""
+    """Route one callback_data string to its handler. Never raises — bad input OR a stale
+    candidate (404/409 from the API) becomes a calm denied result the adapter can show as a toast."""
+    try:
+        return _route(db, api, data, telegram_user_id)
+    except ConversationalApiError as exc:
+        # e.g. tapping Approve on a card whose candidate was removed / DB rotated.
+        return _denied(exc.message)
+
+
+def _route(db: Session, api, data: str, telegram_user_id: int) -> handlers.HandlerResult:
     # "pick:<candidate_id>:<assignee_id>" — different arity, route before parse_callback.
     if data.startswith("pick" + cards.CB_SEP):
         try:
