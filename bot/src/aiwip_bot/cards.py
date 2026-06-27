@@ -75,10 +75,9 @@ def format_candidate_text(candidate: dict) -> str:
     if missing:
         lines.append("⚠️ Не хватает: " + ", ".join(missing))
 
-    _STATUS_LABELS = {"edited": "✏️ изменено", "needs_review": "⏳ на ревью"}
-    if status and status not in ("new", "approved", "rejected"):
-        label = _STATUS_LABELS.get(status, status)
-        lines.append(label)
+    # Only surface the "needs review" state — "edited" is self-evident noise (the admin edited it).
+    if status == "needs_review":
+        lines.append("⏳ на ревью")
     return "\n".join(lines)
 
 
