@@ -14,6 +14,7 @@ SUMMARY_MAX_LEN = 280
 ELLIPSIS = "…"
 
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий", "critical": "Срочно"}
+PRIORITY_DOT = {"low": "🟢", "medium": "🟡", "high": "🟠", "critical": "🔴"}
 _TYPE_LABELS = {
     "task": "Задача", "request": "Запрос", "reminder": "Напоминание",
     "idea": "Идея", "knowledge": "Заметка", "issue": "Проблема",
@@ -50,19 +51,19 @@ def format_candidate_text(candidate: dict) -> str:
     if summary and summary.lower() != (candidate.get("title") or "").lower():
         lines.append(summary)
 
-    # One compact meta line: priority · due · assignee (only the parts we have)
+    # One compact meta line: priority · due · assignee (only the parts we have), with colour/helpers
     meta: list[str] = []
     if priority:
-        meta.append(PRIORITY_LABELS.get(priority, priority))
+        meta.append(f"{PRIORITY_DOT.get(priority, '⚪')} {PRIORITY_LABELS.get(priority, priority)}")
     if due:
-        meta.append(due)
+        meta.append(f"📅 {due}")
     ambiguous = bool(candidate.get("assignee_ambiguous"))
     if not ambiguous:
         if (candidate.get("assignee_count") or 0) >= 1:
             names = candidate.get("assignees") or []
-            meta.append(", ".join(names) if names else "назначено")
+            meta.append("👤 " + (", ".join(names) if names else "назначено"))
         else:
-            meta.append("без ответственного")
+            meta.append("👤 без ответственного")
     if meta:
         lines.append("")
         lines.append(" · ".join(meta))
