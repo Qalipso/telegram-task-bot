@@ -10,6 +10,7 @@ import type { User } from "../lib/types";
 const TABS = [
   { href: "/review", label: "Review Queue" },
   { href: "/board", label: "Board" },
+  { href: "/analytics", label: "Analytics" },
   { href: "/assignees", label: "Assignees" },
   { href: "/sync", label: "Sync" },
 ];

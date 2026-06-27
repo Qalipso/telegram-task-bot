@@ -102,3 +102,20 @@ export interface SyncStatus {
     last_error: string | null;
   }[];
 }
+
+export interface AnalyticsOverview {
+  kpis: {
+    tasks_total: number;
+    tasks_active: number;
+    tasks_done: number;
+    tasks_overdue: number;
+    approval_rate: number;             // 0..1
+    avg_extraction_confidence: number; // 0..1
+  };
+  tasks_over_time: { date: string; candidates: number; approved: number }[];
+  status_distribution: { status: string; count: number }[];
+  priority_distribution: { priority: string; count: number }[];
+  funnel: { messages: number; candidates: number; approved: number; rejected: number };
+  confidence_histogram: { bucket: string; count: number }[];
+  assignee_workload: { name: string; active: number; total: number }[];
+}

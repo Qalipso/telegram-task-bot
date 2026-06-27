@@ -11,6 +11,7 @@ from fastapi import FastAPI, Response, status
 from aiwip_core import health
 from aiwip_core.logging import get_logger
 
+from aiwip_api import analytics as analytics_router
 from aiwip_api.routers import assignees as assignees_router
 from aiwip_api.routers import audit as audit_router
 from aiwip_api.routers import auth as auth_router
@@ -34,6 +35,7 @@ app.include_router(work_items_router.router)
 app.include_router(labels_router.router)
 app.include_router(audit_router.router)
 app.include_router(evaluation_router.router)
+app.include_router(analytics_router.router)
 
 
 @app.get("/health")
