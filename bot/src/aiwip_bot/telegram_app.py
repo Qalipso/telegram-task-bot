@@ -787,7 +787,13 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
 
     @dp.message(F.chat.type.in_({"group", "supergroup"}), F.text)
     async def _group_text(message: Message) -> None:
+        logger.info(
+            "DEBUG group_text recv chat_id=%s type=%s configured=%s text=%r",
+            message.chat.id, message.chat.type,
+            state.is_chat_configured(message.chat.id), (message.text or "")[:40],
+        )
         kind, prompt = await asyncio.to_thread(_capture, settings, _message_to_update(message))
+        logger.info("DEBUG group_text capture chat_id=%s kind=%s", message.chat.id, kind)
         if kind == "onboard" and prompt:
             await message.answer(prompt["text"], reply_markup=_onboard_markup(prompt))
 
