@@ -188,6 +188,10 @@ class ApiClient:
         """GET /api/sync/status — per-chat last-sync state (keyed by external_chat_id)."""
         return self._request("GET", "/api/sync/status").json()
 
+    def invite_start(self) -> dict:
+        """POST /api/auth/invite/start — mint a single-use admin-invite code (admin-only)."""
+        return self._request("POST", "/api/auth/invite/start").json()
+
     def list_candidates(
         self,
         status: str | None = None,

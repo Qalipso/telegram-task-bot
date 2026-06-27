@@ -130,7 +130,8 @@ def dashboard_buttons() -> list[list[AdminButton]]:
     return [
         [AdminButton("📋 Задачи", "admin:tasks"), AdminButton("⏳ На ревью", "admin:review")],
         [AdminButton("💬 Чаты", "admin:chats"), AdminButton("📜 История", "admin:history")],
-        [AdminButton("🔗 Интеграции", "admin:integrations"), AdminButton("🔄 Обновить", "admin:menu")],
+        [AdminButton("🔗 Интеграции", "admin:integrations"), AdminButton("👥 Пригласить", "admin:invite")],
+        [AdminButton("🔄 Обновить", "admin:menu")],
     ]
 
 

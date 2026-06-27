@@ -226,3 +226,15 @@ class TelegramRedeemRequest(BaseModel):
 
 class TelegramRedeemResponse(BaseModel):
     status: str
+
+
+class InviteStartResponse(BaseModel):
+    code: str
+    expires_in_seconds: int
+
+
+class InviteRedeemRequest(BaseModel):
+    code: str
+    telegram_user_id: int            # data to WRITE after the code proves the invite — never identity
+    display_name: str | None = None  # the new admin's name (from Telegram), for the Assignee row
+    telegram_username: str | None = None

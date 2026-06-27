@@ -5,15 +5,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from aiwip_api import auth, telegram_link
+from aiwip_api import auth, invite, telegram_link
 from aiwip_api.schemas import (
+    InviteRedeemRequest,
+    InviteStartResponse,
     LoginRequest,
     TelegramLinkStartResponse,
     TelegramRedeemRequest,
     TelegramRedeemResponse,
     UserOut,
 )
-from aiwip_core.models import Assignee, User
+from aiwip_core.models import Assignee, User, UserRole
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -97,3 +99,69 @@ def telegram_redeem(
         max_age=auth.SESSION_TTL_SECONDS,
     )
     return TelegramRedeemResponse(status="linked")
+
+
+@router.post("/invite/start", response_model=InviteStartResponse)
+def invite_start(admin: User = Depends(auth.require_admin)) -> InviteStartResponse:
+    """Admin-initiated: mint a single-use invite code that CREATES a new admin on redeem."""
+    code = invite.issue_invite_code(admin.id, role=UserRole.admin.value)
+    return InviteStartResponse(code=code, expires_in_seconds=invite.INVITE_CODE_TTL_SECONDS)
+
+
+@router.post("/invite/redeem", response_model=TelegramRedeemResponse)
+def invite_redeem(
+    payload: InviteRedeemRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(auth.get_db),
+) -> TelegramRedeemResponse:
+    """Bot-called, UNAUTHENTICATED. A valid single-use invite CREATES a new admin user+assignee
+    bound to the redeemer's telegram id (re-joining an already-registered id just logs in).
+    Rate-limited on both axes before the code is touched (spec §6.4)."""
+    client_ip = request.client.host if request.client else "unknown"
+    tg_ok = telegram_link.check_and_increment_rate_limit(
+        str(payload.telegram_user_id), telegram_link.RATE_LIMIT_TGUSER_PREFIX
+    )
+    ip_ok = telegram_link.check_and_increment_rate_limit(client_ip, telegram_link.RATE_LIMIT_IP_PREFIX)
+    if not (tg_ok and ip_ok):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many invite attempts")
+
+    redeemed = invite.redeem_invite_code(payload.code)
+    if redeemed is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or expired invite code")
+    role_str, _inviter_id = redeemed
+    role = UserRole(role_str) if role_str in (r.value for r in UserRole) else UserRole.admin
+
+    # Idempotent: if this telegram id is already a linked user, just log them in.
+    existing = db.execute(
+        select(Assignee).where(Assignee.telegram_user_id == payload.telegram_user_id)
+    ).scalar_one_or_none()
+    if existing is not None and existing.user_id is not None:
+        user = db.get(User, existing.user_id)
+    else:
+        name = (payload.display_name or "Admin").strip()[:255]
+        user = User(
+            email=f"tg-{payload.telegram_user_id}@aiwip.local",
+            display_name=name,
+            role=role,
+            password_hash=None,  # bot-only login; no password
+        )
+        db.add(user)
+        db.flush()
+        db.add(
+            Assignee(
+                display_name=name,
+                telegram_user_id=payload.telegram_user_id,
+                telegram_username=payload.telegram_username,
+                user_id=user.id,
+                is_active=True,
+            )
+        )
+        db.commit()
+
+    token = auth.create_session(user.id)
+    response.set_cookie(
+        auth.COOKIE_NAME, token, httponly=True, secure=True, samesite="lax",
+        max_age=auth.SESSION_TTL_SECONDS,
+    )
+    return TelegramRedeemResponse(status="registered")

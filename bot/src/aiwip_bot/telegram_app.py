@@ -124,6 +124,40 @@ def _redeem(settings, code: str, telegram_user_id: int) -> tuple[int, str]:
     return (resp.status_code, str(detail))
 
 
+def _invite_redeem(settings, code: str, telegram_user_id: int, name: str | None, username: str | None) -> tuple[int, str]:
+    """POST /api/auth/invite/redeem (unauthenticated). Returns (status_code, detail)."""
+    try:
+        resp = httpx.post(
+            f"{settings.bot_api_base}/api/auth/invite/redeem",
+            json={
+                "code": code,
+                "telegram_user_id": telegram_user_id,
+                "display_name": name,
+                "telegram_username": username,
+            },
+            timeout=10.0,
+        )
+    except httpx.HTTPError as exc:
+        return (0, f"could not reach API: {exc}")
+    try:
+        detail = resp.json().get("detail") or resp.json().get("status") or ""
+    except Exception:  # noqa: BLE001
+        detail = ""
+    return (resp.status_code, str(detail))
+
+
+def _admin_invite(settings, telegram_user_id: int) -> str | None:
+    """Mint an admin-invite code (caller must be a linked admin). Returns the code or None."""
+    api = _new_api(settings)
+    try:
+        with get_sessionmaker()() as db:
+            if not _admin_check(db, telegram_user_id):
+                return None
+        return api.invite_start().get("code")
+    finally:
+        api.close()
+
+
 def _admin_check(db, telegram_user_id: int) -> bool:
     """Return True iff the tapper is a linked admin (same authz as card callbacks)."""
     from aiwip_bot import authz as _authz
@@ -183,13 +217,16 @@ def _admin_review(settings, telegram_user_id: int) -> tuple[str, InlineKeyboardM
         with get_sessionmaker()() as db:
             if not _admin_check(db, telegram_user_id):
                 return None
+            title_map = _chat_title_map(db)
         candidates = api.list_candidates(limit=100)
+        _remap_chat_titles(candidates, title_map)  # show real chat names, not synthetic "chat -123"
         pending = [c for c in candidates if c.get("status") in admin.PENDING_CAND_STATUSES]
         rendered = []
         for c in pending[:10]:
             try:
                 envelope = api.get_candidate(c["id"])
                 cand = envelope["candidate"] if "candidate" in envelope else envelope
+                _remap_chat_titles([cand], title_map)
                 rendered.append(cards.render_card(cand))
             except ConversationalApiError:
                 pass
@@ -506,6 +543,21 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
                 return await _deny()
             await _reply(*result)
 
+        elif data == "admin:invite":
+            code = await asyncio.to_thread(_admin_invite, settings, uid)
+            if code is None:
+                return await _deny()
+            with contextlib.suppress(Exception):
+                await cb.answer("Код создан")
+            with contextlib.suppress(Exception):
+                await cb.message.answer(
+                    "👥 Приглашение нового админа\n\n"
+                    "Перешли этому человеку команду (он введёт её боту):\n"
+                    f"`/join {code}`\n\n"
+                    "⏳ Действует 24 часа, одноразовый. Кто введёт — станет администратором.",
+                    parse_mode="Markdown",
+                )
+
         elif data == "admin:integrations:help":
             # Instant alert popup (no extra message) — the /setwebhook line is already on screen.
             with contextlib.suppress(Exception):
@@ -746,6 +798,30 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
                 text, markup = result
                 await message.answer(text, reply_markup=markup)
 
+    @dp.message(Command("join"))
+    async def _join(message: Message, command: CommandObject) -> None:
+        """Redeem an admin-invite code: creates + logs in a brand-new admin (bot-first registration)."""
+        code = (command.args or "").strip()
+        if not code:
+            await message.answer("Использование: /join <код> (получи код у администратора).")
+            return
+        frm = message.from_user
+        status_code, detail = await asyncio.to_thread(
+            _invite_redeem, settings, code, frm.id, frm.first_name, frm.username
+        )
+        if status_code in (200, 201):
+            await message.answer("✅ Готово! Ты администратор. Открываю панель…")
+            result = await asyncio.to_thread(_admin_menu, settings, frm.id)
+            if result is not None:
+                text, markup = result
+                await message.answer(text, reply_markup=markup)
+        elif status_code == 429:
+            await message.answer("Слишком много попыток. Подожди немного и попробуй снова.")
+        elif status_code == 400:
+            await message.answer("Код приглашения недействителен или истёк. Попроси администратора новый.")
+        else:
+            await message.answer(f"Не удалось активировать приглашение ({status_code}). {detail}")
+
     @dp.my_chat_member()
     async def _membership(event: ChatMemberUpdated) -> None:
         status = event.new_chat_member.status
@@ -820,6 +896,7 @@ async def _set_command_menu(bot: Bot) -> None:
             [
                 BotCommand(command="admin", description="Панель управления задачами"),
                 BotCommand(command="link", description="Привязать аккаунт: /link <код>"),
+                BotCommand(command="join", description="Стать админом по коду: /join <код>"),
                 BotCommand(command="clear", description="Очистить переписку"),
                 BotCommand(command="start", description="Запустить бота"),
             ],
