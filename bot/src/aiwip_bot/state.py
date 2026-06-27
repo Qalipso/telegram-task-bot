@@ -131,36 +131,6 @@ def resume_chat(chat_id: int) -> None:
     get_redis().delete(_pause_key(chat_id))
 
 
-# --- Admin panel: single live "control panel" message id (per DM chat) ---
-# The admin panel is one transient message that always sits at the bottom: each navigation
-# deletes the previous panel and posts a fresh one. Task cards + confirmations are NOT tracked
-# here, so they persist in the chat. TTL'd so a stale id can't linger forever.
-_PANEL_PREFIX = "aiwip:botpanel:"
-_PANEL_TTL_SECONDS = 86400  # 1 day
-
-
-def _panel_key(chat_id: int) -> str:
-    return f"{_PANEL_PREFIX}{chat_id}"
-
-
-def get_panel_message(chat_id: int) -> int | None:
-    raw = get_redis().get(_panel_key(chat_id))
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except (ValueError, TypeError):
-        return None
-
-
-def set_panel_message(chat_id: int, message_id: int) -> None:
-    get_redis().set(_panel_key(chat_id), message_id, ex=_PANEL_TTL_SECONDS)
-
-
-def clear_panel_message(chat_id: int) -> None:
-    get_redis().delete(_panel_key(chat_id))
-
-
 def list_configured_chats() -> list[int]:
     """Return external chat IDs that have an onboarding config key."""
     r = get_redis()

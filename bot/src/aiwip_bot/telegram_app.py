@@ -379,21 +379,6 @@ async def _send_card(bot: Bot, chat_id: int, card: cards.CardMessage) -> None:
     await bot.send_message(chat_id, card.text, reply_markup=_to_markup(card.reply_markup))
 
 
-async def _show_panel(bot: Bot, chat_id: int, text: str, markup: InlineKeyboardMarkup) -> None:
-    """Render the admin panel as ONE live message that always sits at the bottom of the DM.
-
-    Each navigation/refresh deletes the previous panel and posts a fresh one, so the panel never
-    accumulates and is always the newest message. Task cards + approval confirmations are sent
-    separately and are NOT tracked here, so they remain in the chat as permanent history.
-    """
-    prev = await asyncio.to_thread(state.get_panel_message, chat_id)
-    if prev:
-        with contextlib.suppress(Exception):
-            await bot.delete_message(chat_id, prev)
-    sent = await bot.send_message(chat_id, text, reply_markup=markup)
-    await asyncio.to_thread(state.set_panel_message, chat_id, sent.message_id)
-
-
 def _admin_markup(buttons: list[list[admin.AdminButton]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -437,7 +422,7 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
             await message.answer("Нет доступа. Привяжи аккаунт: /link <код>.")
             return
         text, markup = result
-        await _show_panel(bot, message.chat.id, text, markup)
+        await message.answer(text, reply_markup=markup)
 
     @dp.message(Command("setwebhook"))
     async def _setwebhook(message: Message, command: CommandObject) -> None:
@@ -467,8 +452,11 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
         uid = cb.from_user.id
 
         async def _reply(text: str, markup: InlineKeyboardMarkup) -> None:
-            # Single live panel: delete the previous panel, post a fresh one at the bottom.
-            await _show_panel(bot, cb.message.chat.id, text, markup)
+            # Edit the tapped panel IN PLACE — one stable message that transitions between screens.
+            # On "message is not modified" (Обновить with unchanged content) or any edit failure,
+            # leave the panel as-is; never post a new message (that was the duplicate/vanish bug).
+            with contextlib.suppress(Exception):
+                await cb.message.edit_text(text, reply_markup=markup)
             with contextlib.suppress(Exception):  # suppress "query too old" on restart
                 await cb.answer()
 
@@ -714,7 +702,7 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
             result = await asyncio.to_thread(_admin_menu, settings, message.from_user.id)
             if result is not None:
                 text, markup = result
-                await _show_panel(bot, message.chat.id, text, markup)
+                await message.answer(text, reply_markup=markup)
                 return
         await message.answer(
             "Привет! Я превращаю сообщения в рабочем чате в задачи на ревью.\n"
@@ -735,7 +723,7 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
             result = await asyncio.to_thread(_admin_menu, settings, message.from_user.id)
             if result is not None:
                 text, markup = result
-                await _show_panel(bot, message.chat.id, text, markup)
+                await message.answer(text, reply_markup=markup)
 
     @dp.my_chat_member()
     async def _membership(event: ChatMemberUpdated) -> None:
