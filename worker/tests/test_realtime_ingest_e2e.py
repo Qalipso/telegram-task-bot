@@ -71,3 +71,27 @@ def test_forward_only_capture_to_candidate(db):
 
     for key in (queue.botbuf_key(ext), f"{BOTLOCK_PREFIX}{ext}", queue.JOBS_KEY, queue.NOTIFY_KEY):
         r.delete(key)
+
+
+def test_process_job_auto_creates_missing_chat_as_telegram_bot(db):
+    """Live-path guard: a brand-new captured group has NO Chat row; process_job must create it as
+    telegram_bot so build_connector picks BotApiConnector (creating it as telegram would be rejected
+    post-cutover). test_forward_only_capture_to_candidate pre-creates the chat and so misses this."""
+    ext = 9600
+    r = get_redis()
+    for key in (queue.botbuf_key(ext), f"{BOTLOCK_PREFIX}{ext}", queue.JOBS_KEY, queue.NOTIFY_KEY):
+        r.delete(key)
+    db.add(m.Assignee(display_name="Bob", telegram_username="bob", is_active=True))
+    db.flush()
+    # NO chat pre-created — the bot captures into a brand-new group.
+    ingest.ingest_message(
+        ext, ingest.record_from_update(_update(ext, 1, "@bob ship the report by Friday, urgent")),
+        debounce_seconds=60, is_configured=lambda c: True,
+    )
+    job = queue.dequeue(timeout=2)
+    consumer.process_job(job, session_factory=lambda: _SessionCtx(db), llm_client=FakeLLMClient(_ONE_TASK))
+    chat = db.query(m.Chat).filter_by(external_chat_id=ext).one()
+    assert chat.connector_type == m.ConnectorType.telegram_bot  # auto-created as a bot chat
+    assert db.query(m.Candidate).count() >= 1
+    for key in (queue.botbuf_key(ext), f"{BOTLOCK_PREFIX}{ext}", queue.JOBS_KEY, queue.NOTIFY_KEY):
+        r.delete(key)

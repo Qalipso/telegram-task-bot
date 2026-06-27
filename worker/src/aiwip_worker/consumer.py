@@ -104,7 +104,9 @@ def process_job(job: dict, connector_factory=None, session_factory=None, llm_cli
     trigger = SyncTriggerType(job.get("trigger", "manual"))
     with sf() as db:
         # Resolve the chat once; its connector_type is the source of truth for transport selection.
-        chat = get_or_create_chat(db, chat_id)
+        # A brand-new chat is created as telegram_bot — post-cutover the bot is the only writer, so a
+        # job for an unseen chat is bot-sourced (creating it as telegram would make build_connector reject it).
+        chat = get_or_create_chat(db, chat_id, connector_type=ConnectorType.telegram_bot)
         connector = connector_factory() if connector_factory else build_connector(chat.connector_type.value)
         run = run_pipeline(db, connector, chat_id, trigger, job.get("user_id"), llm_client=llm_client)
         status = run.status

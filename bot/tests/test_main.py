@@ -5,10 +5,13 @@ from aiwip_bot import config, main
 
 
 def test_run_once_reports_redis_and_api_flags(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "")  # independent of a developer's live .env token
+    config.get_bot_settings.cache_clear()
     monkeypatch.setattr(health, "check_redis", lambda: health.CheckResult(True, "connected"))
     # API probe is injected so the test never hits the network.
     snapshot = main.run_once(api_probe=lambda: True)
     assert snapshot == {"redis": True, "api": True, "long_poll": False}
+    config.get_bot_settings.cache_clear()
 
 
 def test_run_once_api_down(monkeypatch):

@@ -4,7 +4,7 @@ from aiwip_bot.config import BotSettings
 
 
 def test_defaults_match_spec_section_10():
-    s = BotSettings()
+    s = BotSettings(_env_file=None)  # test pure defaults, independent of a developer's live .env
     # Secrets are Optional so the service can boot without them (CI-safe mode).
     assert s.telegram_bot_token is None
     assert s.bot_admin_email is None
@@ -35,7 +35,7 @@ def test_env_override_is_case_insensitive(monkeypatch):
 
 def test_review_chat_id_default_and_env_override(monkeypatch):
     from aiwip_bot import config as cfg
-    assert cfg.BotSettings().bot_review_chat_id is None  # optional; no import-time error
+    assert cfg.BotSettings(_env_file=None).bot_review_chat_id is None  # default, ignoring live .env
     monkeypatch.setenv("BOT_REVIEW_CHAT_ID", "424242")
     cfg.get_bot_settings.cache_clear()
     assert cfg.get_bot_settings().bot_review_chat_id == 424242
