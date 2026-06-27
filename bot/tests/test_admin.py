@@ -415,7 +415,6 @@ def test_people_text_lists_recognized_and_unresolved():
     assert "Эдуард" in text and "@edot" in text and "эду" in text
     assert "⏸" in text                              # inactive person marked
     assert "Иван" in text and "Маша" in text       # unresolved mentions surfaced
-    assert "/addperson" in text
 
 
 def test_people_buttons_toggle_and_add():

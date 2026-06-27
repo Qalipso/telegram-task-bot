@@ -122,8 +122,7 @@ def dashboard_text(stats: dict) -> str:
         f"Активные: {stats.get('tasks_active', 0)}\n"
         f"Закрыто: {stats.get('tasks_done', 0)}\n"
         f"На ревью: {stats.get('pending_review', 0)}\n"
-        f"Отклонено: {stats.get('rejected', 0)}\n\n"
-        "Выберите раздел."
+        f"Отклонено: {stats.get('rejected', 0)}"
     )
 
 
@@ -211,7 +210,6 @@ def review_text(candidates: list[dict]) -> str:
             lines.append(chat)
     if len(pending) > 10:
         lines.append(f"\n… ещё {len(pending) - 10}")
-    lines.append("\nДействия — на карточках ниже.")
     return "\n".join(lines)
 
 
@@ -229,7 +227,6 @@ def chats_text(chats: list[tuple[int, str]]) -> str:
     for cid, title in chats:
         marker = "⏸ " if state.is_chat_paused(cid) else ""
         lines.append(f"{marker}{title}")
-    lines.append("\nОткрой чат для деталей.")
     return "\n".join(lines)
 
 
@@ -289,9 +286,6 @@ def people_text(assignees: list[dict], unresolved: list[str]) -> str:
     if unresolved:
         lines.append("")
         lines.append("Не распознаны в чатах: " + ", ".join(unresolved[:10]))
-        lines.append("Добавь их — и упоминания начнут привязываться.")
-    lines.append("")
-    lines.append("Добавить: /addperson Имя @username")
     return "\n".join(lines)
 
 

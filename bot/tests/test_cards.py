@@ -61,7 +61,7 @@ def _btn_data(markup):
 def test_ready_card_has_approve_reject_assign():
     markup = cards.build_keyboard(_cand(status="new", missing_fields=[], assignee_count=1))
     texts = _btn_texts(markup)
-    assert any("Approve" in t for t in texts)
+    assert any("Одобрить" in t for t in texts)
     assert any("Отклонить" in t for t in texts)
 
 
@@ -74,7 +74,7 @@ def test_no_approve_all_button_ever():
 def test_needs_review_has_no_one_tap_approve():
     markup = cards.build_keyboard(_cand(status="needs_review", missing_fields=["due_date"], assignee_count=1))
     texts = _btn_texts(markup)
-    assert not any(t.strip() in ("Approve", "✅ Approve") for t in texts)
+    assert not any(t.strip() in ("Одобрить", "✅ Одобрить") for t in texts)
     assert any("Отклонить" in t for t in texts)
 
 
@@ -99,7 +99,7 @@ def test_render_card_bundles_text_and_keyboard():
     card = cards.render_card(_cand(id=5, status="new", missing_fields=[], assignee_count=1))
     assert card.candidate_id == 5
     assert "#5" in card.text
-    assert any("Approve" in b.text for row in card.reply_markup.inline_keyboard for b in row)
+    assert any("Одобрить" in b.text for row in card.reply_markup.inline_keyboard for b in row)
 
 
 def test_card_shows_resolved_assignee_name():
