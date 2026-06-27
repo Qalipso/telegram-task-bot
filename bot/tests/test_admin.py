@@ -404,3 +404,27 @@ def test_validate_webhook_allows_public_https():
     assert admin.validate_webhook_url("https://hooks.zapier.com/abc", _resolve=_ok_resolver) is None
     # a literal public IP over https is fine too
     assert admin.validate_webhook_url("https://93.184.216.34/h") is None
+
+
+def test_people_text_lists_recognized_and_unresolved():
+    assignees = [
+        {"id": 1, "display_name": "Эдуард", "telegram_username": "edot", "aliases": ["эду"], "is_active": True},
+        {"id": 2, "display_name": "Бывший", "telegram_username": None, "aliases": [], "is_active": False},
+    ]
+    text = admin.people_text(assignees, unresolved=["Иван", "Маша"])
+    assert "Эдуард" in text and "@edot" in text and "эду" in text
+    assert "✅" in text and "⏸" in text          # active + inactive marks
+    assert "Иван" in text and "Маша" in text       # unresolved mentions surfaced
+    assert "/addperson" in text
+
+
+def test_people_buttons_toggle_and_add():
+    assignees = [{"id": 7, "display_name": "Эдуард", "is_active": True}]
+    cbs = [b.callback_data for row in admin.people_buttons(assignees) for b in row]
+    assert "admin:poff:7" in cbs           # deactivate the active person
+    assert "admin:addperson" in cbs
+    assert "admin:menu" in cbs
+
+
+def test_people_text_empty():
+    assert "никого" in admin.people_text([], []).lower()

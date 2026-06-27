@@ -129,9 +129,9 @@ def dashboard_text(stats: dict) -> str:
 def dashboard_buttons() -> list[list[AdminButton]]:
     return [
         [AdminButton("📋 Задачи", "admin:tasks"), AdminButton("⏳ На ревью", "admin:review")],
-        [AdminButton("💬 Чаты", "admin:chats"), AdminButton("📜 История", "admin:history")],
-        [AdminButton("🔗 Интеграции", "admin:integrations"), AdminButton("👥 Пригласить", "admin:invite")],
-        [AdminButton("🔄 Обновить", "admin:menu")],
+        [AdminButton("💬 Чаты", "admin:chats"), AdminButton("👤 Люди", "admin:people")],
+        [AdminButton("📜 История", "admin:history"), AdminButton("🔗 Интеграции", "admin:integrations")],
+        [AdminButton("👥 Пригласить", "admin:invite"), AdminButton("🔄 Обновить", "admin:menu")],
     ]
 
 
@@ -263,6 +263,46 @@ def chat_detail_buttons(chat_id: int, *, paused: bool) -> list[list[AdminButton]
         [AdminButton("📜 История", f"admin:history:{chat_id}"), pause_btn],
         [AdminButton("⬅️ К чатам", "admin:chats")],
     ]
+
+
+# ============================================================ People (recognized assignees)
+
+def people_text(assignees: list[dict], unresolved: list[str]) -> str:
+    """Who the AI resolver recognizes in chat messages, plus mentions it could NOT match."""
+    active = [a for a in assignees if a.get("is_active")]
+    if not assignees:
+        lines = ["👤 Кого я узнаю в чатах\n", "Пока никого нет — добавь людей, чтобы задачи назначались."]
+    else:
+        lines = [f"👤 Кого я узнаю в чатах: {len(active)}", ""]
+        for a in assignees:
+            mark = "✅" if a.get("is_active") else "⏸"
+            name = a.get("display_name") or "—"
+            uname = f" · @{a['telegram_username']}" if a.get("telegram_username") else ""
+            aliases = a.get("aliases") or []
+            alias_s = f"  ({', '.join(aliases)})" if aliases else ""
+            lines.append(f"{mark} {name}{uname}{alias_s}")
+    if unresolved:
+        lines.append("")
+        lines.append("❓ Не распознаны в недавних задачах:")
+        lines.append("   " + ", ".join(unresolved[:10]))
+        lines.append("   Добавь их — и упоминания начнут привязываться.")
+    lines.append("")
+    lines.append("Добавить: /addperson Имя @username [алиасы]")
+    return "\n".join(lines)
+
+
+def people_buttons(assignees: list[dict]) -> list[list[AdminButton]]:
+    """One toggle per person (deactivate/activate) + add + back."""
+    rows: list[list[AdminButton]] = []
+    for a in assignees[:12]:
+        name = (a.get("display_name") or "—")[:16]
+        if a.get("is_active"):
+            rows.append([AdminButton(f"⏸ {name}", f"admin:poff:{a['id']}")])
+        else:
+            rows.append([AdminButton(f"▶ {name}", f"admin:pon:{a['id']}")])
+    rows.append([AdminButton("➕ Добавить", "admin:addperson")])
+    rows.append([AdminButton("⬅️ Назад", "admin:menu")])
+    return rows
 
 
 # ============================================================ 5. Integrations

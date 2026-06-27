@@ -207,11 +207,18 @@ class ApiClient:
         """GET /api/work-items — all work items visible to the admin (approved candidates)."""
         return self._request("GET", "/api/work-items").json()
 
-    def list_assignees(self, active: bool = True) -> list[dict]:
-        """GET /api/assignees?active=… — assignee picker source for the 'assign' card."""
-        return self._request(
-            "GET", "/api/assignees", params={"active": "true" if active else "false"}
-        ).json()
+    def list_assignees(self, active: bool | None = True) -> list[dict]:
+        """GET /api/assignees?active=… — recognized people. active=None lists ALL (incl. inactive)."""
+        params = {} if active is None else {"active": "true" if active else "false"}
+        return self._request("GET", "/api/assignees", params=params).json()
+
+    def create_assignee(self, payload: dict) -> dict:
+        """POST /api/assignees — register a new person the resolver can match (admin-only)."""
+        return self._request("POST", "/api/assignees", json=payload).json()
+
+    def update_assignee(self, assignee_id: int, payload: dict) -> dict:
+        """PATCH /api/assignees/{id} — edit/activate/deactivate a person (admin-only)."""
+        return self._request("PATCH", f"/api/assignees/{assignee_id}", json=payload).json()
 
     def close(self) -> None:
         self._client.close()

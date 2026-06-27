@@ -235,6 +235,59 @@ def _admin_review(settings, telegram_user_id: int) -> tuple[str, InlineKeyboardM
         api.close()
 
 
+def _admin_people(settings, telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup] | None:
+    """People the resolver recognizes + mentions it couldn't match (from recent candidates)."""
+    api = _new_api(settings)
+    try:
+        with get_sessionmaker()() as db:
+            if not _admin_check(db, telegram_user_id):
+                return None
+        assignees = api.list_assignees(active=None)  # all, incl. inactive
+        candidates = api.list_candidates(limit=100)
+        seen: set[str] = set()
+        unresolved: list[str] = []
+        for c in candidates:
+            if c.get("status") in admin.PENDING_CAND_STATUSES:
+                for mention in (c.get("unresolved_mentions") or []):
+                    key = (mention or "").strip().lower()
+                    if key and key not in seen:
+                        seen.add(key)
+                        unresolved.append(mention)
+        return admin.people_text(assignees, unresolved), _admin_markup(admin.people_buttons(assignees))
+    finally:
+        api.close()
+
+
+def _admin_person_toggle(settings, telegram_user_id: int, assignee_id: int, *, active: bool) -> tuple[str, InlineKeyboardMarkup] | None:
+    """Activate/deactivate a recognized person, then re-render the People screen."""
+    with get_sessionmaker()() as db:
+        if not _admin_check(db, telegram_user_id):
+            return None
+    api = _new_api(settings)
+    try:
+        api.update_assignee(assignee_id, {"is_active": active})
+    finally:
+        api.close()
+    return _admin_people(settings, telegram_user_id)
+
+
+def _admin_add_person(settings, telegram_user_id: int, name: str | None, username: str | None, aliases: list[str]) -> dict | None:
+    """Create a recognized person. Returns the created assignee dict, or None if not authorized."""
+    with get_sessionmaker()() as db:
+        if not _admin_check(db, telegram_user_id):
+            return None
+    api = _new_api(settings)
+    try:
+        return api.create_assignee({
+            "display_name": name,
+            "telegram_username": username,
+            "aliases": aliases,
+            "is_active": True,
+        })
+    finally:
+        api.close()
+
+
 def _admin_integrations(telegram_user_id: int, *, clear: bool = False) -> tuple[str, InlineKeyboardMarkup] | None:
     with get_sessionmaker()() as db:
         if not _admin_check(db, telegram_user_id):
@@ -543,6 +596,37 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
                 return await _deny()
             await _reply(*result)
 
+        elif data == "admin:people":
+            result = await asyncio.to_thread(_admin_people, settings, uid)
+            if result is None:
+                return await _deny()
+            await _reply(*result)
+
+        elif data.startswith("admin:poff:") or data.startswith("admin:pon:"):
+            active = data.startswith("admin:pon:")
+            prefix = "admin:pon:" if active else "admin:poff:"
+            try:
+                aid = int(data[len(prefix):])
+            except ValueError:
+                return await _deny("Некорректный id.")
+            result = await asyncio.to_thread(_admin_person_toggle, settings, uid, aid, active=active)
+            if result is None:
+                return await _deny()
+            await _reply(*result)
+
+        elif data == "admin:addperson":
+            with contextlib.suppress(Exception):
+                await cb.answer()
+            with contextlib.suppress(Exception):
+                await cb.message.answer(
+                    "➕ Добавить человека\n\n"
+                    "Отправь команду:\n"
+                    "`/addperson Имя @username алиасы`\n\n"
+                    "Например: `/addperson Иван @ivan ваня`\n"
+                    "(@username и алиасы — необязательны)",
+                    parse_mode="Markdown",
+                )
+
         elif data == "admin:invite":
             code = await asyncio.to_thread(_admin_invite, settings, uid)
             if code is None:
@@ -802,6 +886,43 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
                 text, markup = result
                 await message.answer(text, reply_markup=markup)
 
+    @dp.message(Command("addperson"))
+    async def _addperson(message: Message, command: CommandObject) -> None:
+        """Register a person the resolver should recognize: /addperson Имя @username [алиасы]."""
+        if message.chat.type != "private":
+            return
+        args = (command.args or "").strip()
+        if not args:
+            await message.answer(
+                "Использование: /addperson Имя @username [алиасы]\n"
+                "Например: /addperson Иван @ivan ваня"
+            )
+            return
+        name: str | None = None
+        username: str | None = None
+        aliases: list[str] = []
+        for tok in args.split():
+            if tok.startswith("@") and username is None:
+                username = tok[1:]
+            elif name is None:
+                name = tok
+            else:
+                aliases.append(tok)
+        if name is None:
+            name = username  # "@ivan" only → use the username as the name
+        created = await asyncio.to_thread(
+            _admin_add_person, settings, message.from_user.id, name, username, aliases
+        )
+        if created is None:
+            await message.answer("Нет доступа.")
+            return
+        with contextlib.suppress(Exception):
+            await message.delete()  # remove the command echo
+        uname = f" (@{username})" if username else ""
+        await message.answer(
+            f"✅ Добавлен: {name}{uname}\nТеперь упоминания в чатах будут к нему привязываться."
+        )
+
     @dp.message(Command("join"))
     async def _join(message: Message, command: CommandObject) -> None:
         """Redeem an admin-invite code: creates + logs in a brand-new admin (bot-first registration)."""
@@ -901,6 +1022,7 @@ async def _set_command_menu(bot: Bot) -> None:
                 BotCommand(command="admin", description="Панель управления задачами"),
                 BotCommand(command="link", description="Привязать аккаунт: /link <код>"),
                 BotCommand(command="join", description="Стать админом по коду: /join <код>"),
+                BotCommand(command="addperson", description="Добавить человека: /addperson Имя @username"),
                 BotCommand(command="clear", description="Очистить переписку"),
                 BotCommand(command="start", description="Запустить бота"),
             ],
