@@ -45,14 +45,14 @@ _PRIORITY_GROUP = {
 
 # Status as plain words (no emoji — priority dots are the only status marker on a task line).
 _WI_STATUS_WORD = {
-    "inbox": "входящая",
+    "inbox": "входящее",
     "backlog": "бэклог",
-    "ready": "готова",
+    "ready": "готово",
     "in_progress": "в работе",
-    "blocked": "заблокирована",
+    "blocked": "заблокировано",
     "review": "на проверке",
-    "done": "выполнена",
-    "cancelled": "отменена",
+    "done": "выполнено",
+    "cancelled": "отменено",
     "archived": "в архиве",
 }
 

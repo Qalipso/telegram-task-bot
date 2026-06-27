@@ -1,168 +1,142 @@
-# AI Work Intelligence Platform
+# TaskDefiner — AI Work Intelligence Platform
 
-Turns Telegram work discussions into reviewed **Work Items** through a human-in-the-loop AI pipeline:
+A Telegram bot that turns work chatter into tracked tasks.
+
+People talk in a group ("Иван, fix the server by Friday"). The bot quietly notices the real
+to-dos, uses AI to pull out **what** needs doing, **who** it's for, the **priority** and the
+**due date**, and sends you a card to approve. Approved tasks land on a Kanban board.
+
+> **The AI never creates a final task on its own** — every task is one tap of human approval.
+> Precision over recall: a missed weak signal beats a wrong task.
 
 ```
-Telegram → Sync → Normalize → Context → OpenAI candidates → Human review → WorkItem → Kanban board
+group message → bot captures → AI drafts a task → card in your DM → you Approve → task on the board
 ```
 
-Core principle: **the AI never creates final Work Items** — every candidate requires human approval.
-Precision over recall in the review step: a false task is worse than a missed weak signal.
+## How it works
 
-> **Operating the system:** see [`docs/RUNNING.md`](docs/RUNNING.md) for a full first-run and operations
-> guide. **Integrating with other systems** (custom connectors, the AI provider, the REST API,
-> data stores): see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
->
-> Product/spec docs live in [`docs/`](docs/) (EN canonical + RU). Per-stage build reports are in
-> [`docs/build/`](docs/build/). The authoritative spec is [`docs/system-spec.md`](docs/system-spec.md).
+1. Add **@TaskDefiner_bot** to a work group (make it admin, turn group-privacy **off** so it sees messages).
+2. It watches new messages, batches them, and asks OpenAI to extract candidate tasks.
+3. Each candidate arrives as a card in your private chat with the bot — title, assignee, priority, due date.
+4. Tap **Approve** → it becomes a Work Item on the board. Or **Reject / Edit / Assign**.
+
+## The bot is the main interface
+
+Send `/admin` in your DM with the bot to open the control panel (one live message you navigate):
+
+| Section | What it shows |
+|---|---|
+| **Задачи** (Tasks) | All active tasks, grouped by priority, each a compact block: `WI-8 · title` + assignee · status · due · source chat. Toggle to closed tasks. |
+| **На ревью** (Review) | Candidates waiting for a decision, as action cards (Approve / Reject / Assign / Edit). |
+| **Чаты** (Chats) | Connected groups → open one for its task counts, last sync, pause, manual sync, history. |
+| **Люди** (People) | Who the AI recognizes by name — plus names it saw but couldn't match, so you can add them. `/addperson Иван @ivan` |
+| **История** (History) | What the AI processed (found / created / rejected / pending); approved items shown by their task id. |
+| **Интеграции** (Integrations) | Optional outbound webhook (Zapier/Make/n8n) fired on approval; otherwise tasks live locally. |
+| **Пригласить** (Invite) | Generate a one-time code → the new person sends `/join <code>` and becomes an admin. |
+
+Bot commands: `/admin`, `/join <code>`, `/addperson Имя @username`, `/title <id> текст`, `/due <id> ГГГГ-ММ-ДД`, `/clear`, `/link <код>`.
+
+## Web console (secondary)
+
+A Next.js operator UI — login, Review Queue, Board (drag-and-drop), Assignees, Sync — over the same
+data. In production it's bound to localhost; reach it via an SSH tunnel
+(`ssh -L 3000:localhost:3000 …`). Locally it's `http://localhost:3000`.
 
 ## Architecture
 
 | Service | Tech | Role |
 |---|---|---|
-| `api` | FastAPI | REST: auth, candidate review, work items/board, assignees, sync control, audit, evaluation. `http://localhost:8000` |
-| `web` | Next.js 16 / React 19 | Full operator UI (login, review queue, board, assignees, sync) + same-origin API proxy. `http://localhost:3000` |
-| `worker` | Python + Telethon | Telegram sync, normalization, context builder, OpenAI extraction, job consumer + 6h scheduler |
-| `core` | shared package | SQLAlchemy models (19 tables), config, db, redis, queue, logging, audit, promotion |
-| `postgres` 16 / `redis` 7 | — | data + job queue/sessions |
+| `bot` | aiogram (long-poll) | The interface: captures group messages, runs the `/admin` panel, sends + handles task cards. The single capture writer. |
+| `api` | FastAPI | REST: auth, candidates, work items/board, assignees, sync, audit, invites. |
+| `worker` | Python | The AI pipeline: sync → normalize → context → OpenAI extract → candidate. |
+| `web` | Next.js 16 / React 19 | Operator console. |
+| `core` | shared package | SQLAlchemy models, db, redis, queue, promotion, audit. |
+| `postgres` 16 / `redis` 7 | — | data + job queue / sessions. |
 
-The full ingestion pipeline (sync → normalize → context → OpenAI extract) runs inside the worker via
-`consumer.run_pipeline()`. Extraction is **gated**: it runs only when a sync actually saved new
-messages, so the periodic scheduled sync never re-extracts an unchanged window into duplicate candidates.
+Capture is **forward-only and real-time**: the bot buffers incoming messages and hands them to the
+worker through one path — no history scraping, no polling of old chats, no duplicate-message races
+(the bot is the only writer). The AI runs inside the worker via `run_pipeline()` and only extracts
+when a sync actually saved new messages.
 
-## Quick start (Docker)
+> The earlier Telethon (user-account) connector and the 6-hour scheduler were **removed** in the
+> bot-first redesign — the bot itself is now the live source.
 
-```bash
-cp .env.example .env          # fill secrets (see below)
-docker compose up -d --build  # postgres, redis, api, worker, web
-# api → http://localhost:8000 (GET /health, /health/ready)
-# web → http://localhost:3000
-```
+## Deploy (production, ~$5/mo VPS)
 
-Seed the first admin (after the stack is up):
+The bot uses long-polling, so **no domain, open ports, or TLS are needed**. On a fresh Ubuntu server:
 
 ```bash
-docker compose exec -e ADMIN_EMAIL=you@example.com -e ADMIN_PASSWORD='change-me' \
-  api python -m aiwip_api.seed
+git clone https://github.com/Qalipso/telegram-task-bot.git
+cd telegram-task-bot
+bash scripts/deploy.sh            # installs Docker, builds, starts; first run asks you to fill .env
+bash scripts/bootstrap-admin.sh   # seeds the admin + prints a /link code for Telegram
 ```
 
-> ⚠️ **Stale-image gotcha.** The built `api` / `web` / `worker` images bundle source at build time.
-> After editing source you **must rebuild** the affected service or the container keeps serving old
-> code: `docker compose build <svc> && docker compose up -d <svc>`. This bites the `web` image in
-> particular — rebuild it after any UI change. (Tests run against on-disk source, so they can pass
-> while a running container is still stale.) See [`docs/RUNNING.md`](docs/RUNNING.md#troubleshooting).
+Then DM the bot `/link <code>`, send `/admin`, and add the bot to your group. All services run with
+`restart: unless-stopped` (survive reboots); Postgres/Redis/API/web are bound to `127.0.0.1` only.
+This is running live 24/7 on a Hostinger VPS today.
 
-Then connect Telegram and run a first sync — see [`docs/RUNNING.md`](docs/RUNNING.md#first-run).
+## Local development
 
-## Web UI
+```bash
+cp .env.example .env              # fill the secrets below
+docker compose up -d --build      # postgres, redis, api, worker, web, bot
+```
 
-The `web` service is a complete operator console (Next.js 16 / React 19) with five screens:
-
-1. **Login** — email + password; on success the browser holds an httpOnly session cookie.
-2. **Review queue** — candidates that still need triage (defaults to a *To review* filter, hiding
-   already-approved/rejected). Each opens a detail drawer: edit title/summary/type/priority/due date,
-   **assign a responsible person** from the finite list, and approve (→ WorkItem) or reject. Imprecise
-   or missing fields are highlighted (`missing: assignee` / `due date` / `priority`) and the
-   source-message text is shown.
-3. **Board** — a 9-column Kanban (`inbox → backlog → ready → in_progress → blocked → review → done →
-   cancelled → archived`) with drag-and-drop plus a per-card status menu; **click a card** to open a
-   work-item detail drawer (status, assignees, labels, source candidate).
-4. **Assignees** — admin management of the finite responsible list (display name, **Telegram user ID**
-   binding, aliases, active/inactive) the AI resolver matches against.
-5. **Sync** — dashboard of sync runs/state with a **Run sync now** button.
-
-The browser never talks to the API directly. The UI calls a **same-origin Next.js proxy** at
-`web/app/api/[...path]/route.ts` that forwards `/api/*` to `API_BASE` (Docker: `http://api:8000`;
-local dev default: `http://localhost:8000`) and passes the `aiwip_session` httpOnly cookie through
-in both directions, so authentication works without exposing the cookie to client JS.
-
-**Serving the UI:**
-- **Docker:** built into the `web` image — rebuild after UI edits: `docker compose build web && docker compose up -d web`.
-- **Local dev (fast):** `cd web && npm install && npm run dev` → `http://localhost:3000`, proxying to
-  the API at `http://localhost:8000`.
+> ⚠️ **One token, one bot.** A Telegram bot token allows a single poller. Stop the local bot before
+> running one on a server, or they fight over `getUpdates`.
+> ⚠️ **Rebuild after edits.** Images bundle source at build time:
+> `docker compose build <svc> && docker compose up -d <svc>`.
 
 ## Environment (`.env`)
 
 | Var | Purpose |
 |---|---|
-| `APP_ENV` / `LOG_LEVEL` | runtime mode + log verbosity |
-| `POSTGRES_USER/PASSWORD/DB` | Postgres container credentials |
-| `DATABASE_URL` / `REDIS_URL` | service connection strings (compose overrides to in-network hosts) |
-| `SECRET_KEY` | session signing — change for production |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | first-admin seed (passed to `python -m aiwip_api.seed`) |
-| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` / `TELEGRAM_PHONE` | from https://my.telegram.org |
-| `TELEGRAM_SESSION` | Telethon session string — mint with `python scripts/telegram_login.py` (interactive) |
-| `TELEGRAM_CHAT_ID` | target chat to sync |
+| `POSTGRES_PASSWORD` / `SECRET_KEY` | DB password + session signing — use strong values in production |
+| `TELEGRAM_BOT_TOKEN` | from [@BotFather](https://t.me/BotFather) |
+| `BOT_REVIEW_CHAT_ID` | your Telegram user id (where cards arrive) — from [@userinfobot](https://t.me/userinfobot) |
+| `BOT_ADMIN_EMAIL` / `BOT_ADMIN_PASSWORD` | the bot's own API login (full admin access) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | OpenAI (default `gpt-4o-mini`) |
 
-Secrets go in `.env` only (gitignored) — never in source or chat. `TELEGRAM_SESSION` is equivalent to
-a logged-in session; keep it secret. Full reference (incl. defaults) is in
-[`docs/RUNNING.md`](docs/RUNNING.md#environment-variables).
+`TELEGRAM_API_ID/HASH/PHONE/SESSION` are **no longer required** (Telethon removed). Secrets stay in
+`.env` (gitignored) — never in source or chat.
 
-## Pipeline & scheduling
+## REST API (admin/operator surface)
 
-- A sync runs the **full pipeline**: `sync → normalize → context → OpenAI extract` via
-  `run_pipeline()`. Extraction is gated on `messages_saved > 0` and only considers messages **not yet
-  analyzed**, so re-syncing never re-emits a task for a message that already became a candidate (no
-  duplicate candidates). An extraction failure is logged but never fails the sync job.
-- The worker's **scheduler** enqueues a sync for every active chat every **6 hours**
-  (`sync_interval_seconds=21600`). For immediate ingestion, trigger a sync on demand:
-  `POST /api/sync/run` (admin), `python scripts/sync_once.py`, or the **Run sync now** button.
-- **AI:** OpenAI with Structured Outputs (a strict JSON schema), prompt version **v3** (recall-tuned:
-  captures `task` / `request` / `reminder` / `idea` / `knowledge`; ignores chatter and gibberish).
-  Priority is **High / Mid / Low**. Per-item **confidence bands**: `≥ 0.90` → candidate status `new`;
-  `0.60–0.90` → `needs_review`; `< 0.60` → skipped. The AI only ever creates **Candidates**; a human
-  approval promotes a Candidate to a **WorkItem** (carrying its assignee).
-
-## API (admin/operator surface)
-
-- **Auth:** `POST /api/auth/login` (sets the `aiwip_session` cookie) · `GET /api/auth/me` · `POST /api/auth/logout`
-- **Sync:** `POST /api/sync/run` · `GET /api/sync/status` · `GET /api/sync/history`
+- **Auth:** `POST /api/auth/login` · `GET /api/auth/me` · `POST /api/auth/logout`
+- **Registration:** invite `POST /api/auth/invite/{start,redeem}` · link `POST /api/auth/telegram-link/start` · `POST /api/auth/telegram/redeem`
+- **Candidates (review):** `GET /api/candidates` · `PATCH /api/candidates/{id}` · `POST .../approve` (→ WorkItem) · `POST .../reject`
+- **Work items / board:** `GET /api/work-items` · `GET /api/work-items/board` · `POST /api/work-items/{id}/status`
 - **Assignees:** `GET/POST /api/assignees` · `PATCH /api/assignees/{id}`
-- **Candidates (review):** `GET /api/candidates` · `GET /api/candidates/{id}` · `PATCH /api/candidates/{id}` (edit) · `POST /api/candidates/{id}/approve` (→ WorkItem) · `POST /api/candidates/{id}/reject`
-- **Work items / board:** `GET /api/work-items` · `GET /api/work-items/board` · `POST /api/work-items/{id}/status` · `POST /api/work-items/{id}/labels`
-- **Labels:** `GET/POST /api/labels` · **Users:** `GET/POST /api/users`
-- **Audit:** `GET /api/audit` · **Evaluation:** `POST/GET /api/evaluation/cases` · `GET /api/evaluation/reports`
+- **Sync:** `POST /api/sync/run` · `GET /api/sync/status`
 
 Roles: **admin** = everything; **assignee** = view + transition only their own work items.
-Full grouped reference with methods, roles, and curl examples: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md#rest-api).
 
-## Developer guide
+## Tests
 
-- Monorepo: `core/` (shared) · `api/` · `worker/` · `web/`. Python services are editable-installable.
-- **Tests** (need Postgres + Redis on `localhost`; root `conftest.py` forces localhost):
-  ```bash
-  python -m pytest          # 96 tests
-  ```
-- **Migrations** (Alembic, in `core/`):
-  ```bash
-  ALEMBIC_DATABASE_URL=postgresql+psycopg://aiwip:aiwip@localhost:5432/aiwip \
-    python -m alembic -c core/alembic.ini upgrade head
-  ```
-- Build decisions: `build-D1` shared-core monorepo · `build-D2` sync SQLAlchemy · `build-D3` native PG
-  enums · `build-D4` dedicated test DBs · `build-D5` Redis server-side sessions · `build-D6` Redis list queue.
+```bash
+docker compose up -d postgres redis    # tests need them on localhost
+.venv/bin/python -m pytest             # 250+ tests across api / bot / worker / core
+```
 
-## Status & known limitations
+Stop the live `worker` and `bot` containers first — they share Redis and would drain test queues.
 
-**Implemented & tested (96 tests, verified live):** Telegram sync (idempotent), normalization, context
-builder, OpenAI extraction (prompt v2 + confidence bands; candidates, never work items), full sync
-pipeline with gated extraction, candidate review → WorkItem promotion, Kanban board API, assignees +
-resolver, audit, evaluation foundation, Redis queue + 6h scheduler, Docker Compose, and the full
-operator web UI (login, review, board, assignees, sync) over a same-origin cookie-auth proxy.
+## What works today (verified live)
 
-**Known limitations / deferred:**
-- Media intelligence (OCR/vision/voice transcription/doc extraction) — attachments are registered as
-  metadata placeholders only; no download or processing.
-- Semantic, task-level deduplication — not yet implemented.
-- Context builder uses a fixed window + time-gap segmentation (no ML topic segmentation).
-- AI accuracy targets (90/80) are **north-stars**, not launch gates; gate on reviewer behavior + precision.
-- Auth hardening (password reset, rate-limiting, session rotation) deferred.
-- Running Alembic migrations inside the container is not wired (run them host-side, see above).
-- Additional connectors (Slack / Email / WhatsApp / Discord) are reserved enums only —
-  Telegram is the one active source. Adding one: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md#connectors).
-- Retry/backoff is basic (bounded re-enqueue; a failed `sync_runs` row is the dead-letter record).
+Group capture → AI extraction (OpenAI) → candidate → card in your DM → **Approve → Work Item on the
+board**. Plus: assignee resolution and management, **invite-by-code** admin registration, per-chat
+sync / pause / history, processing history, optional outbound webhook, and the web console.
+Deployed and used daily on a VPS.
 
-## Roadmap
+## Planned / not yet built
 
-Media intelligence → semantic task-level dedup → eval dataset growth + accuracy tuning →
-notifications / outbound integrations → additional connectors (Slack / Email / etc.).
+- **Duplicate detection** — similar messages collapsing into one task (designed, not implemented).
+- **Stronger title normalization** — turn raw commands ("Иван, сделай всё по ЮИ") into clean titles.
+- **Media understanding** — voice/image/doc; attachments are metadata only today.
+- **More connectors** — Slack/Email/etc. are reserved; Telegram is the one live source.
+- **Per-chat review routing / multiple reviewers** — there is a single review DM today.
+
+---
+
+Product/spec docs live in [`docs/`](docs/). Some of them still describe the pre-bot-first design
+(Telethon, 6h scheduler); this README reflects the current, deployed system.
