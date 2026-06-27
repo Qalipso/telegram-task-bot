@@ -128,10 +128,10 @@ def dashboard_text(stats: dict) -> str:
 
 def dashboard_buttons() -> list[list[AdminButton]]:
     return [
-        [AdminButton("📋 Задачи", "admin:tasks"), AdminButton("⏳ На ревью", "admin:review")],
-        [AdminButton("💬 Чаты", "admin:chats"), AdminButton("👤 Люди", "admin:people")],
-        [AdminButton("📜 История", "admin:history"), AdminButton("🔗 Интеграции", "admin:integrations")],
-        [AdminButton("👥 Пригласить", "admin:invite"), AdminButton("🔄 Обновить", "admin:menu")],
+        [AdminButton("🌴 Задачи", "admin:tasks"), AdminButton("🐒 На ревью", "admin:review")],
+        [AdminButton("🦜 Чаты", "admin:chats"), AdminButton("🐘 Люди", "admin:people")],
+        [AdminButton("🐢 История", "admin:history"), AdminButton("🐍 Интеграции", "admin:integrations")],
+        [AdminButton("🪺 Пригласить", "admin:invite"), AdminButton("🍃 Обновить", "admin:menu")],
     ]
 
 
@@ -186,12 +186,12 @@ def tasks_text(work_items: list[dict], *, closed: bool = False) -> str:
 
 def tasks_buttons(*, closed: bool = False) -> list[list[AdminButton]]:
     if closed:
-        toggle = AdminButton("📋 Активные", "admin:tasks")
-        refresh = AdminButton("🔄 Обновить", "admin:tasks:closed")
+        toggle = AdminButton("🌿 Активные", "admin:tasks")
+        refresh = AdminButton("🍃 Обновить", "admin:tasks:closed")
     else:
-        toggle = AdminButton("✅ Закрытые", "admin:tasks:closed")
-        refresh = AdminButton("🔄 Обновить", "admin:tasks")
-    return [[refresh, toggle], [AdminButton("⬅️ Назад", "admin:menu")]]
+        toggle = AdminButton("🍂 Закрытые", "admin:tasks:closed")
+        refresh = AdminButton("🍃 Обновить", "admin:tasks")
+    return [[refresh, toggle], [AdminButton("🐾 Назад", "admin:menu")]]
 
 
 # ============================================================ 3. Review queue
@@ -214,7 +214,7 @@ def review_text(candidates: list[dict]) -> str:
 
 
 def review_buttons() -> list[list[AdminButton]]:
-    return [[AdminButton("🔄 Обновить", "admin:review"), AdminButton("⬅️ Назад", "admin:menu")]]
+    return [[AdminButton("🍃 Обновить", "admin:review"), AdminButton("🐾 Назад", "admin:menu")]]
 
 
 # ============================================================ 4. Chats
@@ -235,9 +235,9 @@ def chats_buttons(chats: list[tuple[int, str]]) -> list[list[AdminButton]]:
     rows: list[list[AdminButton]] = []
     for cid, title in chats:
         short = title[:24] + "…" if len(title) > 24 else title
-        icon = "⏸" if state.is_chat_paused(cid) else "▶"
+        icon = "🦥" if state.is_chat_paused(cid) else "🦜"
         rows.append([AdminButton(f"{icon} {short}", f"admin:chat:{cid}")])
-    rows.append([AdminButton("⬅️ Назад", "admin:menu")])
+    rows.append([AdminButton("🐾 Назад", "admin:menu")])
     return rows
 
 
@@ -257,13 +257,13 @@ def chat_detail_text(title: str, stats: dict, last_sync: str | None, *, paused: 
 
 def chat_detail_buttons(chat_id: int, *, paused: bool) -> list[list[AdminButton]]:
     pause_btn = (
-        AdminButton("▶ Возобновить", f"admin:resume:{chat_id}")
-        if paused else AdminButton("⏸ Пауза", f"admin:pause:{chat_id}")
+        AdminButton("🐆 Возобновить", f"admin:resume:{chat_id}")
+        if paused else AdminButton("🦥 Пауза", f"admin:pause:{chat_id}")
     )
     return [
-        [AdminButton("🔄 Синхронизировать", f"admin:sync:{chat_id}")],
-        [AdminButton("📜 История", f"admin:history:{chat_id}"), pause_btn],
-        [AdminButton("⬅️ К чатам", "admin:chats")],
+        [AdminButton("🌧 Синхронизировать", f"admin:sync:{chat_id}")],
+        [AdminButton("🐢 История", f"admin:history:{chat_id}"), pause_btn],
+        [AdminButton("🐾 К чатам", "admin:chats")],
     ]
 
 
@@ -295,11 +295,11 @@ def people_buttons(assignees: list[dict]) -> list[list[AdminButton]]:
     for a in assignees[:12]:
         name = (a.get("display_name") or "—")[:16]
         if a.get("is_active"):
-            rows.append([AdminButton(f"⏸ {name}", f"admin:poff:{a['id']}")])
+            rows.append([AdminButton(f"🌿 {name}", f"admin:poff:{a['id']}")])
         else:
-            rows.append([AdminButton(f"▶ {name}", f"admin:pon:{a['id']}")])
-    rows.append([AdminButton("➕ Добавить", "admin:addperson")])
-    rows.append([AdminButton("⬅️ Назад", "admin:menu")])
+            rows.append([AdminButton(f"🍂 {name}", f"admin:pon:{a['id']}")])
+    rows.append([AdminButton("🌱 Добавить", "admin:addperson")])
+    rows.append([AdminButton("🐾 Назад", "admin:menu")])
     return rows
 
 
@@ -327,11 +327,11 @@ def integrations_text(webhook_url: str | None) -> str:
 def integrations_buttons(webhook_url: str | None) -> list[list[AdminButton]]:
     rows: list[list[AdminButton]] = []
     if webhook_url:
-        rows.append([AdminButton("❌ Отключить webhook", "admin:integrations:clear")])
+        rows.append([AdminButton("🪓 Отключить webhook", "admin:integrations:clear")])
     else:
-        rows.append([AdminButton("➕ Задать webhook", "admin:integrations:help")])
-    rows.append([AdminButton("📋 Список задач", "admin:export")])
-    rows.append([AdminButton("⬅️ Назад", "admin:menu")])
+        rows.append([AdminButton("🌱 Задать webhook", "admin:integrations:help")])
+    rows.append([AdminButton("🌴 Список задач", "admin:export")])
+    rows.append([AdminButton("🐾 Назад", "admin:menu")])
     return rows
 
 
@@ -375,7 +375,7 @@ def history_text(
 
 
 def history_buttons(back: str = "admin:menu") -> list[list[AdminButton]]:
-    return [[AdminButton("⬅️ Назад", back)]]
+    return [[AdminButton("🐾 Назад", back)]]
 
 
 # ============================================================ outbound webhook

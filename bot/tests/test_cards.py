@@ -74,7 +74,7 @@ def test_no_approve_all_button_ever():
 def test_needs_review_has_no_one_tap_approve():
     markup = cards.build_keyboard(_cand(status="needs_review", missing_fields=["due_date"], assignee_count=1))
     texts = _btn_texts(markup)
-    assert not any(t.strip() in ("Одобрить", "✅ Одобрить") for t in texts)
+    assert not any("Одобрить" in t for t in texts)
     assert any("Отклонить" in t for t in texts)
 
 

@@ -116,17 +116,17 @@ def build_keyboard(candidate: dict) -> InlineKeyboardMarkup:
     _ACTIONABLE = {"new", "edited", "needs_review"}
     ready = status in _ACTIONABLE and not missing and assignee_count >= 1 and not ambiguous
     if ready:
-        rows.append([_btn("✅ Одобрить", "approve", cid)])
+        rows.append([_btn("🌿 Одобрить", "approve", cid)])
 
     # Assignee row — always show so the admin can change/add an assignee at any time.
     if ambiguous:
-        rows.append([_btn("❓ Кто?", "who", cid), _btn("👤 Назначить", "assign", cid)])
+        rows.append([_btn("🐒 Кто?", "who", cid), _btn("🐘 Назначить", "assign", cid)])
     elif assignee_count == 0:
-        rows.append([_btn("👤 Назначить", "assign", cid)])
+        rows.append([_btn("🐘 Назначить", "assign", cid)])
     else:
-        rows.append([_btn("👤 Сменить", "assign", cid)])
+        rows.append([_btn("🐘 Сменить", "assign", cid)])
 
-    rows.append([_btn("✏️ Изменить", "edit", cid), _btn("🗑 Отклонить", "reject", cid)])
+    rows.append([_btn("🦫 Изменить", "edit", cid), _btn("🍂 Отклонить", "reject", cid)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -155,7 +155,7 @@ def render_edit_menu(candidate: dict) -> CardMessage:
     rows: list[list[InlineButton]] = []
     for pair in _PRIORITY_PICKER_PAIRS:
         rows.append([InlineButton(label, f"eprio{CB_SEP}{cid}{CB_SEP}{val}") for label, val in pair])
-    rows.append([InlineButton("⬅️ К задаче", f"eback{CB_SEP}{cid}")])
+    rows.append([InlineButton("🐾 К задаче", f"eback{CB_SEP}{cid}")])
     return CardMessage(candidate_id=cid, text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
