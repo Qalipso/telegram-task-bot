@@ -39,7 +39,7 @@ def test_long_title_is_truncated():
 
 def test_missing_fields_render_as_badge():
     text = cards.format_candidate_text(_cand(status="needs_review", missing_fields=["assignee", "due_date"]))
-    assert "assignee" in text and "due_date" in text
+    assert "ответственный" in text and "срок" in text  # human labels, not raw field names
 
 
 def test_ambiguous_assignee_shows_unresolved_mention():
@@ -104,7 +104,7 @@ def test_render_card_bundles_text_and_keyboard():
 
 def test_card_shows_resolved_assignee_name():
     text = cards.format_candidate_text(_cand(status="new", assignee_count=1, assignees=["Иван"]))
-    assert "👤 Иван" in text
+    assert "Иван" in text
 
 
 def test_card_assignee_line_lists_multiple_names():

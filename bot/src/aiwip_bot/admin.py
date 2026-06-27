@@ -42,23 +42,24 @@ _PRIORITY_GROUP = {
     "low": "🟢 Низкий",
     None: "⚪ Без приоритета",
 }
-_PRIORITY_DOT = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢", None: "⚪"}
 
-_WI_STATUS_LABEL = {
-    "inbox": "📥 Inbox",
-    "backlog": "📋 Бэклог",
-    "ready": "🟢 Готова",
-    "in_progress": "🔄 В работе",
-    "blocked": "🔴 Блок",
-    "review": "👀 Ревью",
-    "done": "✅ Done",
-    "cancelled": "🚫 Отменена",
-    "archived": "🗄 Архив",
+# Status as plain words (no emoji — priority dots are the only status marker on a task line).
+_WI_STATUS_WORD = {
+    "inbox": "входящая",
+    "backlog": "бэклог",
+    "ready": "готова",
+    "in_progress": "в работе",
+    "blocked": "заблокирована",
+    "review": "на проверке",
+    "done": "выполнена",
+    "cancelled": "отменена",
+    "archived": "в архиве",
 }
 
+# Outcome markers for the processing-history list (✅❌⏳ are genuine status markers).
 _CAND_STATUS_ICON = {
     "approved": "✅", "rejected": "❌", "needs_review": "⏳",
-    "new": "🆕", "edited": "✏️", "duplicate": "🔁", "error": "⚠️",
+    "new": "⏳", "edited": "⏳", "duplicate": "❌", "error": "⚠",
 }
 
 
@@ -115,14 +116,14 @@ def _short_dt(iso: str | None) -> str:
 def dashboard_text(stats: dict) -> str:
     """stats: chats, tasks_total, tasks_active, tasks_done, pending_review, rejected."""
     return (
-        "🛠 Admin-панель TaskDefiner\n\n"
-        f"💬 Подключено чатов: {stats.get('chats', 0)}\n"
-        f"📋 Всего задач создано: {stats.get('tasks_total', 0)}\n"
-        f"🟡 Активных задач: {stats.get('tasks_active', 0)}\n"
-        f"✅ Закрыто задач: {stats.get('tasks_done', 0)}\n"
-        f"⏳ На ревью: {stats.get('pending_review', 0)}\n"
-        f"❌ Отклонено кандидатов: {stats.get('rejected', 0)}\n\n"
-        "Выберите раздел:"
+        "TaskDefiner · панель\n\n"
+        f"Чаты: {stats.get('chats', 0)}\n"
+        f"Задачи: {stats.get('tasks_total', 0)}\n"
+        f"Активные: {stats.get('tasks_active', 0)}\n"
+        f"Закрыто: {stats.get('tasks_done', 0)}\n"
+        f"На ревью: {stats.get('pending_review', 0)}\n"
+        f"Отклонено: {stats.get('rejected', 0)}\n\n"
+        "Выберите раздел."
     )
 
 
@@ -137,36 +138,36 @@ def dashboard_buttons() -> list[list[AdminButton]]:
 
 # ============================================================ 2. Tasks
 
-def _task_line(wi: dict) -> str:
-    pr = wi.get("priority")
-    dot = _PRIORITY_DOT.get(pr, "⚪")
+def _task_block(wi: dict) -> str:
+    """A compact 2-line block: 'WI-N · title' then a meta line. Priority is shown by the
+    section header it sits under, so the line itself stays free of emoji."""
     title = wi.get("title") or "(без названия)"
-    head = f"{dot} WI-{wi.get('id', '?')} — {title}"
+    head = f"WI-{wi.get('id', '?')} · {title}"
     meta: list[str] = []
     assignees = wi.get("assignees") or []
     if assignees:
-        meta.append("👤 " + ", ".join(assignees[:2]))
-    meta.append(_WI_STATUS_LABEL.get(wi.get("status", ""), wi.get("status", "")))
+        meta.append(", ".join(assignees[:2]))
+    meta.append(_WI_STATUS_WORD.get(wi.get("status", ""), wi.get("status", "")))
     due = _short_date(wi.get("due_date"))
     if due:
-        meta.append(f"📅 {due}")
+        meta.append(due)
     chat = wi.get("source_chat_title")
     if chat:
-        meta.append(f"💬 {chat}")
-    return head + "\n   " + " · ".join(meta)
+        meta.append(chat)
+    return head + "\n" + " · ".join(meta)
 
 
 def tasks_text(work_items: list[dict], *, closed: bool = False) -> str:
     if closed:
         items = [w for w in work_items if w.get("status") in CLOSED_WI_STATUSES]
         if not items:
-            return "✅ Закрытых задач нет."
-        header = f"✅ Закрытые задачи: {len(items)}"
+            return "Закрытых задач нет."
+        header = f"Закрытые задачи: {len(items)}"
     else:
         items = [w for w in work_items if w.get("status") not in CLOSED_WI_STATUSES]
         if not items:
-            return "📋 Активных задач нет.\n\nОдобренные задачи появятся здесь."
-        header = f"📋 Активные задачи: {len(items)}"
+            return "Активных задач нет.\n\nОдобренные задачи появятся здесь."
+        header = f"Активные задачи: {len(items)}"
 
     lines = [header]
     by_priority: dict[str | None, list[dict]] = {}
@@ -176,9 +177,11 @@ def tasks_text(work_items: list[dict], *, closed: bool = False) -> str:
         group = by_priority.get(pr)
         if not group:
             continue
-        lines.append(f"\n{_PRIORITY_GROUP[pr]}")
+        lines.append("")
+        lines.append(_PRIORITY_GROUP[pr])  # e.g. "🟠 Высокий" — the only status marker per row
         for w in group[:15]:
-            lines.append(_task_line(w))
+            lines.append("")
+            lines.append(_task_block(w))
     return "\n".join(lines)
 
 
@@ -197,17 +200,18 @@ def tasks_buttons(*, closed: bool = False) -> list[list[AdminButton]]:
 def review_text(candidates: list[dict]) -> str:
     pending = [c for c in candidates if c.get("status") in PENDING_CAND_STATUSES]
     if not pending:
-        return "✅ Очередь ревью пуста.\n\nНовые кандидаты из чатов появятся здесь."
-    lines = [f"⏳ На ревью: {len(pending)}"]
+        return "Очередь ревью пуста.\n\nНовые кандидаты из чатов появятся здесь."
+    lines = [f"На ревью: {len(pending)}"]
     for c in pending[:10]:
-        icon = _CAND_STATUS_ICON.get(c.get("status", ""), "•")
         title = c.get("title") or "(без названия)"
+        lines.append("")
+        lines.append(f"#{c.get('id', '?')} · {title}")
         chat = c.get("source_chat_title")
-        suffix = f" · 💬 {chat}" if chat else ""
-        lines.append(f"{icon} #{c.get('id', '?')} — {title}{suffix}")
+        if chat:
+            lines.append(chat)
     if len(pending) > 10:
-        lines.append(f"… ещё {len(pending) - 10}")
-    lines.append("\nКарточки с действиями отправлены ниже.")
+        lines.append(f"\n… ещё {len(pending) - 10}")
+    lines.append("\nДействия — на карточках ниже.")
     return "\n".join(lines)
 
 
@@ -220,11 +224,12 @@ def review_buttons() -> list[list[AdminButton]]:
 def chats_text(chats: list[tuple[int, str]]) -> str:
     """chats: list of (external_chat_id, display_title)."""
     if not chats:
-        return "💬 Чаты\n\nНет подключённых чатов.\nДобавь бота в группу и пройди настройку."
-    lines = [f"💬 Подключено чатов: {len(chats)}", "\nОткрой чат для деталей:"]
+        return "Чаты\n\nНет подключённых чатов.\nДобавь бота в группу и пройди настройку."
+    lines = [f"Подключённые чаты: {len(chats)}", ""]
     for cid, title in chats:
-        icon = "⏸" if state.is_chat_paused(cid) else "▶"
-        lines.append(f"{icon} {title}")
+        marker = "⏸ " if state.is_chat_paused(cid) else ""
+        lines.append(f"{marker}{title}")
+    lines.append("\nОткрой чат для деталей.")
     return "\n".join(lines)
 
 
@@ -241,15 +246,15 @@ def chats_buttons(chats: list[tuple[int, str]]) -> list[list[AdminButton]]:
 
 def chat_detail_text(title: str, stats: dict, last_sync: str | None, *, paused: bool) -> str:
     """stats: total, active, closed. last_sync: ISO timestamp or None."""
-    state_line = "⏸ На паузе" if paused else "▶ Активен"
+    state_line = "⏸ На паузе" if paused else "Активен"
     sync_line = _short_dt(last_sync) or "ещё не было"
     return (
-        f"💬 {title}\n"
-        f"{state_line}\n\n"
-        f"📋 Задач всего: {stats.get('total', 0)}\n"
-        f"🟡 Активных: {stats.get('active', 0)}\n"
-        f"✅ Закрыто: {stats.get('closed', 0)}\n"
-        f"🕓 Последняя синхронизация: {sync_line}"
+        f"{title}\n\n"
+        f"Статус: {state_line}\n"
+        f"Задачи: {stats.get('total', 0)}\n"
+        f"Активные: {stats.get('active', 0)}\n"
+        f"Закрыто: {stats.get('closed', 0)}\n"
+        f"Синхронизация: {sync_line}"
     )
 
 
@@ -271,23 +276,22 @@ def people_text(assignees: list[dict], unresolved: list[str]) -> str:
     """Who the AI resolver recognizes in chat messages, plus mentions it could NOT match."""
     active = [a for a in assignees if a.get("is_active")]
     if not assignees:
-        lines = ["👤 Кого я узнаю в чатах\n", "Пока никого нет — добавь людей, чтобы задачи назначались."]
+        lines = ["Люди\n", "Пока никого нет — добавь людей, чтобы задачи назначались."]
     else:
-        lines = [f"👤 Кого я узнаю в чатах: {len(active)}", ""]
+        lines = [f"Узнаю в чатах: {len(active)}", ""]
         for a in assignees:
-            mark = "✅" if a.get("is_active") else "⏸"
+            marker = "" if a.get("is_active") else "⏸ "
             name = a.get("display_name") or "—"
             uname = f" · @{a['telegram_username']}" if a.get("telegram_username") else ""
             aliases = a.get("aliases") or []
-            alias_s = f"  ({', '.join(aliases)})" if aliases else ""
-            lines.append(f"{mark} {name}{uname}{alias_s}")
+            alias_s = f" · {', '.join(aliases)}" if aliases else ""
+            lines.append(f"{marker}{name}{uname}{alias_s}")
     if unresolved:
         lines.append("")
-        lines.append("❓ Не распознаны в недавних задачах:")
-        lines.append("   " + ", ".join(unresolved[:10]))
-        lines.append("   Добавь их — и упоминания начнут привязываться.")
+        lines.append("Не распознаны в чатах: " + ", ".join(unresolved[:10]))
+        lines.append("Добавь их — и упоминания начнут привязываться.")
     lines.append("")
-    lines.append("Добавить: /addperson Имя @username [алиасы]")
+    lines.append("Добавить: /addperson Имя @username")
     return "\n".join(lines)
 
 
@@ -311,17 +315,16 @@ def integrations_text(webhook_url: str | None) -> str:
     if webhook_url:
         display = webhook_url if len(webhook_url) <= _MAX_URL_DISPLAY else webhook_url[:_MAX_URL_DISPLAY - 1] + "…"
         return (
-            "🔗 Интеграции\n\n"
+            "Интеграции\n\n"
             "✅ Webhook подключён\n"
             f"{display}\n\n"
             "Срабатывает при каждом одобрении задачи.\n"
             "Сменить: /setwebhook <url>"
         )
     return (
-        "🔗 Интеграции\n\n"
-        "✅ Подключена локальная борда. Webhook не используется.\n"
-        "Все одобренные задачи хранятся здесь и видны в веб-консоли.\n\n"
-        "⚠️ Внешний webhook не задан.\n"
+        "Интеграции\n\n"
+        "Одобренные задачи хранятся локально (видны в веб-консоли).\n"
+        "Внешний webhook не задан.\n\n"
         "Чтобы отправлять задачи во внешний сервис (Zapier, Make, n8n):\n"
         "/setwebhook https://your-webhook-url.com"
     )
@@ -350,7 +353,7 @@ def history_text(
 
     Approved candidates are shown as their promoted task id (WI-N), never the raw candidate id.
     """
-    title = f"📜 История обработки — {label}" if label else "📜 История обработки"
+    title = f"История обработки — {label}" if label else "История обработки"
     if not candidates:
         return f"{title}\n\nПока ничего не обработано."
     counts: Counter[str] = Counter(c.get("status") for c in candidates)
@@ -358,22 +361,22 @@ def history_text(
     lines = [
         title,
         "",
-        f"🔍 Найдено сообщений-кандидатов: {len(candidates)}",
-        f"✅ Создано задач: {counts.get('approved', 0)}",
-        f"❌ Отклонено: {counts.get('rejected', 0)}",
-        f"⏳ Ждут ревью: {pending}",
+        f"Найдено: {len(candidates)}",
+        f"Создано задач: {counts.get('approved', 0)}",
+        f"Отклонено: {counts.get('rejected', 0)}",
+        f"Ждут ревью: {pending}",
         "",
-        "Последние:",
+        "Последние",
     ]
     for c in candidates[:6]:
         status = c.get("status", "")
-        icon = _CAND_STATUS_ICON.get(status, "•")
+        icon = _CAND_STATUS_ICON.get(status, "•")  # ✅ / ❌ / ⏳ outcome marker
         c_title = c.get("title") or "(без названия)"
         if status == "approved" and c.get("id") in wi_map:
             ref = f"WI-{wi_map[c['id']]}"
         else:
             ref = f"#{c.get('id', '?')}"
-        lines.append(f"{icon} {ref} — {c_title}")
+        lines.append(f"{icon} {ref} · {c_title}")
     return "\n".join(lines)
 
 

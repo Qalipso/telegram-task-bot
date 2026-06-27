@@ -14,7 +14,14 @@ SUMMARY_MAX_LEN = 280
 ELLIPSIS = "…"
 
 PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий", "critical": "Срочно"}
-_TYPE_LABELS = {"task": "Задача", "idea": "Идея", "reminder": "Напоминание", "issue": "Проблема"}
+_TYPE_LABELS = {
+    "task": "Задача", "request": "Запрос", "reminder": "Напоминание",
+    "idea": "Идея", "knowledge": "Заметка", "issue": "Проблема",
+}
+# Human labels for the AI's missing-field flags (keeps the card professional, not techy).
+_MISSING_LABELS = {
+    "assignee": "ответственный", "due_date": "срок", "priority": "приоритет", "title": "название",
+}
 
 
 def _truncate(value: str | None, limit: int) -> str:
@@ -26,12 +33,9 @@ def _truncate(value: str | None, limit: int) -> str:
     return value[: limit - 1].rstrip() + ELLIPSIS
 
 
-def _confidence_pct(value: float | None) -> str:
-    return f"{round(value * 100)}%" if isinstance(value, (int, float)) else "—"
-
-
 def format_candidate_text(candidate: dict) -> str:
-    """CandidateOut dict -> human-readable card body. Pure string; no side effects."""
+    """CandidateOut dict -> a clean card body. Plain text (no markdown — the bot sends cards
+    without parse_mode). Emoji appear only as status markers (⚠ warnings)."""
     cid = candidate.get("id")
     ctype = candidate.get("candidate_type", "item")
     type_label = _TYPE_LABELS.get(ctype, ctype.capitalize())
@@ -40,44 +44,36 @@ def format_candidate_text(candidate: dict) -> str:
     priority = candidate.get("priority") or ""
     due_raw = candidate.get("due_date") or ""
     due = due_raw[:10] if due_raw else ""
-    status = candidate.get("status", "")
-    task_conf = _confidence_pct(candidate.get("task_confidence"))
 
-    lines = [f"📥 {type_label} #{cid}", f"*{title}*"]
-
+    # Header + title + (optional) summary
+    lines = [f"{type_label} · #{cid}", title]
     if summary and summary.lower() != (candidate.get("title") or "").lower():
         lines.append(summary)
 
+    # One compact meta line: priority · due · assignee (only the parts we have)
     meta: list[str] = []
     if priority:
-        meta.append(f"⚡ {PRIORITY_LABELS.get(priority, priority)}")
+        meta.append(PRIORITY_LABELS.get(priority, priority))
     if due:
-        meta.append(f"📅 {due}")
-    meta.append(f"🎯 {task_conf}")
-    lines.append("  •  ".join(meta))
-
-    missing = candidate.get("missing_fields") or []
-    if candidate.get("assignee_ambiguous"):
-        mentions = candidate.get("unresolved_mentions") or []
-        who = ", ".join(mentions) if mentions else "?"
-        lines.append(f"❓ Неоднозначно — кто из: {who}")
-    elif (candidate.get("assignee_count") or 0) == 0:
-        mentions = candidate.get("unresolved_mentions") or []
-        if mentions:
-            lines.append(f"👤 Без ответственного  (упомянут: {', '.join(mentions)})")
+        meta.append(due)
+    ambiguous = bool(candidate.get("assignee_ambiguous"))
+    if not ambiguous:
+        if (candidate.get("assignee_count") or 0) >= 1:
+            names = candidate.get("assignees") or []
+            meta.append(", ".join(names) if names else "назначено")
         else:
-            lines.append("👤 Ответственный не назначен")
-    else:
-        # Resolved assignee(s) — show who it's on.
-        names = candidate.get("assignees") or []
-        lines.append("👤 " + (", ".join(names) if names else "назначен"))
+            meta.append("без ответственного")
+    if meta:
+        lines.append("")
+        lines.append(" · ".join(meta))
 
+    # Warnings last, as status markers
+    if ambiguous:
+        mentions = candidate.get("unresolved_mentions") or []
+        lines.append("⚠ Кто из: " + (", ".join(mentions) if mentions else "?"))
+    missing = candidate.get("missing_fields") or []
     if missing:
-        lines.append("⚠️ Не хватает: " + ", ".join(missing))
-
-    # Only surface the "needs review" state — "edited" is self-evident noise (the admin edited it).
-    if status == "needs_review":
-        lines.append("⏳ на ревью")
+        lines.append("⚠ Не хватает: " + ", ".join(_MISSING_LABELS.get(m, m) for m in missing))
     return "\n".join(lines)
 
 
@@ -149,13 +145,12 @@ def render_edit_menu(candidate: dict) -> CardMessage:
     due = (candidate.get("due_date") or "—")[:10]
 
     text = (
-        f"✏️ Редактировать #{cid}\n"
-        f"*{title}*\n\n"
+        f"Редактирование · #{cid}\n"
+        f"{title}\n\n"
         f"Приоритет: {priority_label}   Срок: {due}\n\n"
-        "Выбери приоритет ↓\n"
-        "Или напиши боту в личку:\n"
-        f"`/title {cid} новое название`\n"
-        f"`/due {cid} ГГГГ-ММ-ДД`"
+        "Выбери приоритет ниже, либо отправь боту:\n"
+        f"/title {cid} новое название\n"
+        f"/due {cid} ГГГГ-ММ-ДД"
     )
     rows: list[list[InlineButton]] = []
     for pair in _PRIORITY_PICKER_PAIRS:

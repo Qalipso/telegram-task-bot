@@ -18,12 +18,12 @@ def test_dashboard_text_shows_all_counters():
     stats = {"chats": 1, "tasks_total": 5, "tasks_active": 5, "tasks_done": 0,
              "pending_review": 2, "rejected": 11}
     text = admin.dashboard_text(stats)
-    assert "Подключено чатов: 1" in text
-    assert "Всего задач создано: 5" in text
-    assert "Активных задач: 5" in text
-    assert "Закрыто задач: 0" in text
+    assert "Чаты: 1" in text
+    assert "Задачи: 5" in text
+    assert "Активные: 5" in text
+    assert "Закрыто: 0" in text
     assert "На ревью: 2" in text
-    assert "Отклонено кандидатов: 11" in text
+    assert "Отклонено: 11" in text
 
 
 def test_dashboard_buttons_has_all_sections():
@@ -38,7 +38,7 @@ def test_dashboard_buttons_has_all_sections():
 
 def test_integrations_text_no_webhook_mentions_local_board():
     text = admin.integrations_text(None)
-    assert "локальная борда" in text.lower()
+    assert "локально" in text.lower()
     assert "/setwebhook" in text
 
 
@@ -123,8 +123,8 @@ def test_chat_detail_text_shows_counts_and_sync():
         "2026-06-27T13:56:00+00:00", paused=False,
     )
     assert "Work Chat" in text
-    assert "Задач всего: 3" in text
-    assert "Активных: 2" in text
+    assert "Задачи: 3" in text
+    assert "Активные: 2" in text
     assert "Закрыто: 1" in text
     assert "2026-06-27 13:56" in text
 
@@ -413,7 +413,7 @@ def test_people_text_lists_recognized_and_unresolved():
     ]
     text = admin.people_text(assignees, unresolved=["Иван", "Маша"])
     assert "Эдуард" in text and "@edot" in text and "эду" in text
-    assert "✅" in text and "⏸" in text          # active + inactive marks
+    assert "⏸" in text                              # inactive person marked
     assert "Иван" in text and "Маша" in text       # unresolved mentions surfaced
     assert "/addperson" in text
 
