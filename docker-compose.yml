@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiwip}
       POSTGRES_DB: ${POSTGRES_DB:-aiwip}
     ports:
-      - "5432:5432"
+      # Bind to loopback only — never expose Postgres on a public interface.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -26,7 +27,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # Bind to loopback only — never expose Redis on a public interface.
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -51,7 +53,8 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aiwip}:${POSTGRES_PASSWORD:-aiwip}@postgres:5432/${POSTGRES_DB:-aiwip}
       REDIS_URL: redis://redis:6379/0
     ports:
-      - "8000:8000"
+      # Loopback only — reach the API from your laptop via an SSH tunnel, not the open internet.
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,7 +145,8 @@ services:
     environment:
       API_BASE: http://api:8000
     ports:
-      - "3000:3000"
+      # Loopback only — reach the web console via an SSH tunnel (ssh -L 3000:localhost:3000 …).
+      - "127.0.0.1:3000:3000"
     depends_on:
       api:
         condition: service_healthy
