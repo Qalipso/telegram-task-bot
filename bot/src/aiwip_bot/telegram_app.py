@@ -710,6 +710,8 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
         if card is None:
             await message.answer("Нет доступа.")
             return
+        with contextlib.suppress(Exception):
+            await message.delete()  # remove the /title command echo to reduce clutter
         await _send_card(bot, message.chat.id, card)
 
     @dp.message(Command("due"))
@@ -749,6 +751,8 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
         if card is None:
             await message.answer("Нет доступа.")
             return
+        with contextlib.suppress(Exception):
+            await message.delete()  # remove the /due command echo to reduce clutter
         await _send_card(bot, message.chat.id, card)
 
     @dp.message(Command("clear"))

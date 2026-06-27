@@ -162,3 +162,20 @@ def test_patch_rejects_inactive_assignee_id(client, db):
     db.flush()
     r = client.patch(f"/api/candidates/{cand.id}", json={"assignee_ids": [ghost.id]})
     assert r.status_code == 422, r.text
+
+
+def test_patch_clears_missing_field_when_set(client, db):
+    """Setting due_date via PATCH must drop 'due_date' from missing_fields (card stops nagging)."""
+    from aiwip_api import auth as _auth
+    import datetime as _dt
+    u = m.User(email="ed@x.io", role=m.UserRole.admin, password_hash=_auth.hash_password("pw123456"))
+    db.add(u); db.flush()
+    client.post("/api/auth/login", json={"email": "ed@x.io", "password": "pw123456"})
+    c = m.Candidate(candidate_type=m.CandidateType.task, title="t", status=m.CandidateStatus.needs_review,
+                    missing_fields=["due_date", "assignee"])
+    db.add(c); db.flush()
+    r = client.patch(f"/api/candidates/{c.id}", json={"due_date": "2026-06-29T00:00:00Z"})
+    assert r.status_code == 200
+    out = r.json()
+    assert "due_date" not in (out["missing_fields"] or [])
+    assert "assignee" in (out["missing_fields"] or [])  # untouched field stays

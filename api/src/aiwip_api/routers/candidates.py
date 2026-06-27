@@ -150,6 +150,13 @@ def edit_candidate(
         setattr(candidate, field, value)
     if assignee_ids is not None:
         _set_candidate_assignees(db, candidate, assignee_ids)
+    # Drop any now-populated field from missing_fields so the card stops nagging once it's set
+    # (e.g. setting due_date via /due must clear "due_date"). Assignee is handled above.
+    missing = [
+        f for f in (candidate.missing_fields or [])
+        if f == "assignee" or getattr(candidate, f, None) in (None, "")
+    ]
+    candidate.missing_fields = missing
     candidate.status = CandidateStatus.edited
     db.flush()
     audit.record_audit(
