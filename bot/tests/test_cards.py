@@ -100,3 +100,13 @@ def test_render_card_bundles_text_and_keyboard():
     assert card.candidate_id == 5
     assert "#5" in card.text
     assert any("Approve" in b.text for row in card.reply_markup.inline_keyboard for b in row)
+
+
+def test_card_shows_resolved_assignee_name():
+    text = cards.format_candidate_text(_cand(status="new", assignee_count=1, assignees=["Иван"]))
+    assert "👤 Иван" in text
+
+
+def test_card_assignee_line_lists_multiple_names():
+    text = cards.format_candidate_text(_cand(status="new", assignee_count=2, assignees=["Иван", "Эдуард"]))
+    assert "Иван" in text and "Эдуард" in text

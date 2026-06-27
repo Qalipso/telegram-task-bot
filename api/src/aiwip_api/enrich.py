@@ -15,6 +15,7 @@ from aiwip_api.schemas import CandidateOut, WorkItemOut
 from aiwip_core.models import (
     Assignee,
     Candidate,
+    CandidateAssignee,
     CandidateMessage,
     Chat,
     Message,
@@ -60,6 +61,26 @@ def _names_by_work_item(db: Session, work_item_ids: Sequence[int]) -> dict[int, 
     return out
 
 
+def _names_by_candidate(db: Session, candidate_ids: Sequence[int]) -> dict[int, list[str]]:
+    """candidate_id -> [display_name, ...] (primary assignee first)."""
+    if not candidate_ids:
+        return {}
+    rows = db.execute(
+        select(
+            CandidateAssignee.candidate_id,
+            Assignee.display_name,
+            Assignee.telegram_username,
+        )
+        .join(Assignee, Assignee.id == CandidateAssignee.assignee_id)
+        .where(CandidateAssignee.candidate_id.in_(candidate_ids))
+        .order_by(CandidateAssignee.candidate_id, CandidateAssignee.is_primary.desc())
+    ).all()
+    out: dict[int, list[str]] = {}
+    for cand_id, display_name, username in rows:
+        out.setdefault(cand_id, []).append(display_name or username or "?")
+    return out
+
+
 def work_items_out(db: Session, items: Sequence[WorkItem]) -> list[WorkItemOut]:
     """Serialize work items with assignee names + source chat attached."""
     names = _names_by_work_item(db, [w.id for w in items])
@@ -80,14 +101,20 @@ def work_items_out(db: Session, items: Sequence[WorkItem]) -> list[WorkItemOut]:
 
 
 def candidates_out(db: Session, items: Sequence[Candidate]) -> list[CandidateOut]:
-    """Serialize candidates with source chat attached."""
-    chats = _chat_by_candidate(db, [c.id for c in items])
+    """Serialize candidates with source chat + resolved assignee names attached."""
+    ids = [c.id for c in items]
+    chats = _chat_by_candidate(db, ids)
+    names = _names_by_candidate(db, ids)
     result: list[CandidateOut] = []
     for c in items:
         ext_id, title = chats.get(c.id, (None, None))
         result.append(
             CandidateOut.model_validate(c).model_copy(
-                update={"source_chat_id": ext_id, "source_chat_title": title}
+                update={
+                    "source_chat_id": ext_id,
+                    "source_chat_title": title,
+                    "assignees": names.get(c.id, []),
+                }
             )
         )
     return result

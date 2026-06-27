@@ -103,8 +103,13 @@ def get_candidate(
         .where(CandidateMessage.candidate_id == candidate_id)
         .order_by(Message.external_message_id)
     ).all()
+    # Resolved assignee display names (primary first) so the bot card can show "👤 <name>".
+    ordered = sorted(assignees, key=lambda row: not row[0].is_primary)
+    assignee_names = [a.display_name or a.telegram_username or f"#{a.id}" for _ca, a in ordered]
     return {
-        "candidate": CandidateOut.model_validate(candidate).model_dump(),
+        "candidate": CandidateOut.model_validate(candidate)
+        .model_copy(update={"assignees": assignee_names})
+        .model_dump(),
         "assignees": [
             {
                 "assignee_id": ca.assignee_id,

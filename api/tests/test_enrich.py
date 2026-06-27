@@ -86,3 +86,25 @@ def test_sync_status_exposes_external_chat_id(client, db):
     db.flush()
     states = client.get("/api/sync/status").json()["states"]
     assert any(s["external_chat_id"] == -100999 and s["chat_title"] == "Sync Chat" for s in states)
+
+
+def test_candidate_list_carries_assignee_names(client, db):
+    _login_admin(client, db, email="adm2@x.io")
+    chat = _chat(db, external_chat_id=-100222, title="Team")
+    cand = _candidate_in_chat(db, chat, title="do it")
+    a = m.Assignee(display_name="Иван", telegram_username="ivan", is_active=True)
+    db.add(a); db.flush()
+    db.add(m.CandidateAssignee(candidate_id=cand.id, assignee_id=a.id, is_primary=True)); db.flush()
+    row = client.get("/api/candidates").json()[0]
+    assert row["assignees"] == ["Иван"]
+
+
+def test_candidate_detail_carries_assignee_names(client, db):
+    _login_admin(client, db, email="adm3@x.io")
+    chat = _chat(db, external_chat_id=-100333, title="Team")
+    cand = _candidate_in_chat(db, chat, title="do it")
+    a = m.Assignee(display_name="Эдуард", telegram_username="edot", is_active=True)
+    db.add(a); db.flush()
+    db.add(m.CandidateAssignee(candidate_id=cand.id, assignee_id=a.id, is_primary=True)); db.flush()
+    env = client.get(f"/api/candidates/{cand.id}").json()
+    assert env["candidate"]["assignees"] == ["Эдуард"]

@@ -67,6 +67,10 @@ def format_candidate_text(candidate: dict) -> str:
             lines.append(f"👤 Без ответственного  (упомянут: {', '.join(mentions)})")
         else:
             lines.append("👤 Ответственный не назначен")
+    else:
+        # Resolved assignee(s) — show who it's on.
+        names = candidate.get("assignees") or []
+        lines.append("👤 " + (", ".join(names) if names else "назначен"))
 
     if missing:
         lines.append("⚠️ Не хватает: " + ", ".join(missing))

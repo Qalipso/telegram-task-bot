@@ -92,6 +92,8 @@ class CandidateOut(BaseModel):
     # Source chat (external Telegram id + title) — set by the enrich layer, default None.
     source_chat_id: int | None = None
     source_chat_title: str | None = None
+    # Resolved assignee display names (primary first) — set by the enrich/detail layer.
+    assignees: list[str] = Field(default_factory=list)
 
     # Populated from the ORM relationship Candidate.candidate_assignees; excluded from output.
     # Reduced to a list of assignee ids so we can derive assignee_count without a nested schema.
