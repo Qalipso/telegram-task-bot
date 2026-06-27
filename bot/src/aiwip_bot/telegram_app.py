@@ -792,10 +792,25 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
             await message.answer(prompt["text"], reply_markup=_onboard_markup(prompt))
 
 
+async def _set_command_menu(bot: Bot) -> None:
+    """Register the '/' command menu shown in private chats (best-effort; never fatal)."""
+    from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats
+    with contextlib.suppress(Exception):
+        await bot.set_my_commands(
+            [
+                BotCommand(command="admin", description="Панель управления задачами"),
+                BotCommand(command="link", description="Привязать аккаунт: /link <код>"),
+                BotCommand(command="start", description="Запустить бота"),
+            ],
+            scope=BotCommandScopeAllPrivateChats(),
+        )
+
+
 async def _amain(settings) -> None:
     bot = Bot(token=settings.telegram_bot_token)
     dp = Dispatcher()
     _register(dp, bot, settings)
+    await _set_command_menu(bot)
     notify_task = asyncio.create_task(_notify_consumer(bot, settings))
     logger.info("bot polling started; confirm cards go to chat %s", settings.bot_review_chat_id)
     try:
