@@ -452,11 +452,14 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
         uid = cb.from_user.id
 
         async def _reply(text: str, markup: InlineKeyboardMarkup) -> None:
-            # Edit the tapped panel IN PLACE — one stable message that transitions between screens.
-            # On "message is not modified" (Обновить with unchanged content) or any edit failure,
-            # leave the panel as-is; never post a new message (that was the duplicate/vanish bug).
+            # Transient panel, always at the bottom: delete the EXACT message whose button was
+            # tapped (cb.message — no Redis tracking, so no tracked-vs-visible mismatch that made
+            # panels vanish), then post a fresh panel at the bottom of the chat. Task cards and
+            # approval confirmations are separate messages and are never touched.
             with contextlib.suppress(Exception):
-                await cb.message.edit_text(text, reply_markup=markup)
+                await cb.message.delete()
+            with contextlib.suppress(Exception):
+                await bot.send_message(cb.message.chat.id, text, reply_markup=markup)
             with contextlib.suppress(Exception):  # suppress "query too old" on restart
                 await cb.answer()
 
@@ -696,6 +699,24 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
             return
         await _send_card(bot, message.chat.id, card)
 
+    @dp.message(Command("clear"))
+    async def _clear(message: Message) -> None:
+        """Wipe recent bot/admin messages in this DM, then land on a fresh panel.
+
+        In private chats a bot may delete both its own and the user's messages (<48h). We try a
+        window of recent message ids below the /clear message; non-existent/too-old ids fail and
+        are suppressed."""
+        if message.chat.type != "private":
+            return
+        chat_id, last_id = message.chat.id, message.message_id
+        for mid in range(last_id, max(1, last_id - 100), -1):
+            with contextlib.suppress(Exception):
+                await bot.delete_message(chat_id, mid)
+        result = await asyncio.to_thread(_admin_menu, settings, message.from_user.id)
+        if result is not None:
+            text, markup = result
+            await message.answer(text, reply_markup=markup)
+
     @dp.message(Command("start"))
     async def _start(message: Message) -> None:
         if message.chat.type == "private":
@@ -799,6 +820,7 @@ async def _set_command_menu(bot: Bot) -> None:
             [
                 BotCommand(command="admin", description="Панель управления задачами"),
                 BotCommand(command="link", description="Привязать аккаунт: /link <код>"),
+                BotCommand(command="clear", description="Очистить переписку"),
                 BotCommand(command="start", description="Запустить бота"),
             ],
             scope=BotCommandScopeAllPrivateChats(),
