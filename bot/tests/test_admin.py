@@ -404,3 +404,13 @@ def test_validate_webhook_allows_public_https():
     assert admin.validate_webhook_url("https://hooks.zapier.com/abc", _resolve=_ok_resolver) is None
     # a literal public IP over https is fine too
     assert admin.validate_webhook_url("https://93.184.216.34/h") is None
+
+
+def test_panel_message_roundtrip():
+    cid = -100_999_777
+    state.clear_panel_message(cid)
+    assert state.get_panel_message(cid) is None
+    state.set_panel_message(cid, 4242)
+    assert state.get_panel_message(cid) == 4242
+    state.clear_panel_message(cid)
+    assert state.get_panel_message(cid) is None
