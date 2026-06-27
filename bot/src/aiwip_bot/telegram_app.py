@@ -132,19 +132,9 @@ def _admin_check(db, telegram_user_id: int) -> bool:
 
 
 def _dashboard_stats(work_items: list[dict], candidates: list[dict]) -> dict:
-    """Compute the six dashboard counters from the full work-item + candidate lists."""
-    closed = sum(1 for w in work_items if w.get("status") in admin.CLOSED_WI_STATUSES)
-    total = len(work_items)
-    pending = sum(1 for c in candidates if c.get("status") in admin.PENDING_CAND_STATUSES)
-    rejected = sum(1 for c in candidates if c.get("status") == "rejected")
-    return {
-        "chats": len(state.list_configured_chats()),
-        "tasks_total": total,
-        "tasks_active": total - closed,
-        "tasks_done": closed,
-        "pending_review": pending,
-        "rejected": rejected,
-    }
+    """Compute the six dashboard counters from the full work-item + candidate lists.
+    Math lives in admin.dashboard_counters (aiogram-free + unit-tested); we add the chat count."""
+    return {"chats": len(state.list_configured_chats()), **admin.dashboard_counters(work_items, candidates)}
 
 
 def _admin_menu(settings, telegram_user_id: int) -> tuple[str, InlineKeyboardMarkup] | None:
@@ -319,9 +309,7 @@ def _admin_chat_detail(settings, telegram_user_id: int, chat_id: int) -> tuple[s
             title_map = _chat_title_map(db)
         title = title_map.get(chat_id, str(chat_id))
         work_items = api.list_work_items()
-        mine = [w for w in work_items if w.get("source_chat_id") == chat_id]
-        closed = sum(1 for w in mine if w.get("status") in admin.CLOSED_WI_STATUSES)
-        stats = {"total": len(mine), "active": len(mine) - closed, "closed": closed}
+        stats = admin.chat_task_stats(work_items, chat_id)
         last_sync = _last_sync_for(api, chat_id)
         paused = state.is_chat_paused(chat_id)
         return (
@@ -343,7 +331,7 @@ def _admin_history(settings, telegram_user_id: int, chat_id: int | None = None) 
         candidates = api.list_candidates(limit=100)
         work_items = api.list_work_items()
         # candidate_id -> work_item_id, so approved candidates show their WI-N task id.
-        wi_map = {w["source_candidate_id"]: w["id"] for w in work_items if w.get("source_candidate_id")}
+        wi_map = admin.build_wi_map(work_items)
         if chat_id is not None:
             candidates = [c for c in candidates if c.get("source_chat_id") == chat_id]
             label = title_map.get(chat_id, str(chat_id))
@@ -447,8 +435,12 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
             await message.answer("Нет доступа.")
             return
         url = (command.args or "").strip()
-        if not url or not url.startswith("http"):
+        if not url:
             await message.answer("Использование: /setwebhook https://hooks.zapier.com/...")
+            return
+        err = await asyncio.to_thread(admin.validate_webhook_url, url)  # DNS resolution off the loop
+        if err:
+            await message.answer(f"❌ {err}\nИспользование: /setwebhook https://hooks.zapier.com/...")
             return
         state.set_admin_webhook(url)
         short = url if len(url) <= 40 else url[:37] + "..."
@@ -549,9 +541,11 @@ def _register(dp: Dispatcher, bot: Bot, settings) -> None:
                     priority = wi.get("priority") or ""
                     due = (wi.get("due_date") or "")[:10]
                     meta = "  ".join(filter(None, [priority, due]))
-                    lines.append(f"{icon} WI-{wi['id']} *{title}*" + (f"\n    {meta}" if meta else ""))
+                    lines.append(f"{icon} WI-{wi['id']} — {title}" + (f"\n    {meta}" if meta else ""))
+                # PLAIN text (no parse_mode): titles are untrusted — Markdown specials in a title
+                # would otherwise break the whole message (same reason cards are plain, see §17 docstring).
                 with contextlib.suppress(Exception):
-                    await cb.message.answer("\n".join(lines), parse_mode="Markdown")
+                    await cb.message.answer("\n".join(lines))
 
         elif data == "admin:chats":
             # Backfill Redis titles from Telegram API for chats that were configured before

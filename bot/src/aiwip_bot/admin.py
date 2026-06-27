@@ -12,8 +12,11 @@ answers ONE question:
 """
 from __future__ import annotations
 
+import ipaddress
+import socket
 from collections import Counter
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 
@@ -63,6 +66,37 @@ _CAND_STATUS_ICON = {
 class AdminButton:
     text: str
     callback_data: str
+
+
+# ============================================================ pure aggregators
+# These compute the screen numbers from the raw work-item / candidate lists. They live here
+# (the aiogram-free "pure logic" module) so they are unit-testable without importing the bot
+# runtime. telegram_app.py's adapters fetch the lists over the API and call these.
+
+def dashboard_counters(work_items: list[dict], candidates: list[dict]) -> dict:
+    """The five list-derived dashboard counters (chat count is added by the caller)."""
+    closed = sum(1 for w in work_items if w.get("status") in CLOSED_WI_STATUSES)
+    total = len(work_items)
+    return {
+        "tasks_total": total,
+        "tasks_active": total - closed,
+        "tasks_done": closed,
+        "pending_review": sum(1 for c in candidates if c.get("status") in PENDING_CAND_STATUSES),
+        "rejected": sum(1 for c in candidates if c.get("status") == "rejected"),
+    }
+
+
+def chat_task_stats(work_items: list[dict], chat_id: int) -> dict:
+    """total / active / closed task counts for one source chat."""
+    mine = [w for w in work_items if w.get("source_chat_id") == chat_id]
+    closed = sum(1 for w in mine if w.get("status") in CLOSED_WI_STATUSES)
+    return {"total": len(mine), "active": len(mine) - closed, "closed": closed}
+
+
+def build_wi_map(work_items: list[dict]) -> dict[int, int]:
+    """candidate_id -> work_item_id, so approved candidates render their WI-N task id.
+    Work items without a source candidate (manual, or missing key) are skipped."""
+    return {w["source_candidate_id"]: w["id"] for w in work_items if w.get("source_candidate_id")}
 
 
 def _short_date(iso: str | None) -> str:
@@ -308,6 +342,40 @@ def history_buttons(back: str = "admin:menu") -> list[list[AdminButton]]:
 
 # ============================================================ outbound webhook
 
+def validate_webhook_url(url: str, *, _resolve=socket.getaddrinfo) -> str | None:
+    """Guard /setwebhook against SSRF. Return None if the URL is an acceptable outbound target,
+    else a short human error string.
+
+    Policy (chosen 2026-06-27, security-sensitive): https-only; block loopback (127/8, ::1,
+    localhost) and link-local / cloud-metadata (169.254.0.0/16, fe80::/10). Public and private-LAN
+    https endpoints (e.g. self-hosted n8n on 192.168.x.x over TLS) are allowed. The host is resolved
+    and EVERY mapped address is checked, so a public hostname pointing at metadata/loopback is caught.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:  # noqa: BLE001 — any parse failure is a reject
+        return "Некорректный URL."
+    if parsed.scheme != "https":
+        return "Webhook должен использовать https://."
+    host = parsed.hostname
+    if not host:
+        return "В URL не указан хост."
+    if host.lower() == "localhost":
+        return "Локальные адреса запрещены."
+    try:
+        infos = _resolve(host, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return "Не удалось разрешить хост."
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if ip.is_loopback or ip.is_link_local:
+            return "Адрес указывает на служебную/локальную сеть — запрещено."
+    return None
+
+
 def push_webhook(work_item: dict, url: str) -> bool:
     """POST the approved work item to the configured webhook URL. Returns True on success."""
     try:
@@ -320,6 +388,6 @@ def push_webhook(work_item: dict, url: str) -> bool:
             logger.warning("webhook POST %s for url=%r", resp.status_code, url)
             return False
         return True
-    except httpx.HTTPError as exc:
-        logger.warning("webhook POST failed: %s", exc)
+    except Exception as exc:  # noqa: BLE001 — incl. httpx.InvalidURL (NOT an httpx.HTTPError) from a
+        logger.warning("webhook POST failed: %s", exc)  # malformed stored URL; never fail the approve
         return False

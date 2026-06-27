@@ -283,3 +283,124 @@ def test_handle_approve_no_push_when_denied(db):
     result = handle_approve(db, api, 999999, 42, _push_fn=lambda wi: called.append(wi))
     assert result.did_act is False
     assert called == []
+
+
+def test_handle_approve_push_failure_does_not_fail_approval(db):
+    """A raising push side-effect must NOT surface as a failed approval (candidate is already
+    approved server-side). Regression: httpx.InvalidURL from a malformed stored webhook URL is
+    NOT an httpx.HTTPError, so it escaped push_webhook and propagated out of handle_approve."""
+    from aiwip_core import models as m
+
+    wi = {"id": 99, "title": "Done"}
+    api = _FakeApi(wi)
+
+    user = m.User(email="admin2@test.com", role=m.UserRole.admin)
+    db.add(user)
+    db.flush()
+    assignee = m.Assignee(display_name="Admin2", telegram_user_id=700002, is_active=True)
+    db.add(assignee)
+    db.flush()
+    user.assignee = assignee
+    db.flush()
+
+    def _boom(_wi):
+        raise RuntimeError("webhook layer blew up")
+
+    result = handle_approve(db, api, 700002, 42, _push_fn=_boom)
+    assert result.did_act is True          # the approval itself stands
+    assert api.approved == [42]            # candidate was approved server-side
+
+
+def test_push_webhook_invalid_url_returns_false(monkeypatch):
+    """httpx.InvalidURL (NOT a subclass of httpx.HTTPError) must be caught, not raised."""
+    import httpx as _httpx
+
+    def _raise(*a, **kw):
+        raise _httpx.InvalidURL("no host in URL")
+
+    monkeypatch.setattr(_httpx, "post", _raise)
+    assert admin.push_webhook({"id": 1}, "http://") is False
+
+
+# --------------------------------------------------------------------------- pure aggregators
+
+def test_dashboard_counters_math():
+    work_items = [
+        {"id": 1, "status": "inbox"},
+        {"id": 2, "status": "in_progress"},
+        {"id": 3, "status": "done"},
+        {"id": 4, "status": "archived"},
+        {"id": 5, "status": "cancelled"},
+    ]
+    candidates = [
+        {"id": 1, "status": "new"},
+        {"id": 2, "status": "needs_review"},
+        {"id": 3, "status": "edited"},
+        {"id": 4, "status": "rejected"},
+        {"id": 5, "status": "rejected"},
+        {"id": 6, "status": "approved"},
+    ]
+    c = admin.dashboard_counters(work_items, candidates)
+    assert c["tasks_total"] == 5
+    assert c["tasks_done"] == 3          # done + archived + cancelled
+    assert c["tasks_active"] == 2        # total - closed
+    assert c["pending_review"] == 3      # new + needs_review + edited
+    assert c["rejected"] == 2
+
+
+def test_chat_task_stats_filters_by_chat():
+    work_items = [
+        {"id": 1, "status": "inbox", "source_chat_id": -100},
+        {"id": 2, "status": "done", "source_chat_id": -100},
+        {"id": 3, "status": "inbox", "source_chat_id": -200},
+    ]
+    s = admin.chat_task_stats(work_items, -100)
+    assert s == {"total": 2, "active": 1, "closed": 1}
+    assert admin.chat_task_stats(work_items, -999) == {"total": 0, "active": 0, "closed": 0}
+
+
+def test_build_wi_map_skips_null_source_candidate():
+    work_items = [
+        {"id": 10, "source_candidate_id": 58},
+        {"id": 11, "source_candidate_id": None},   # manual WI, no candidate — must be skipped
+        {"id": 12},                                 # missing key — must be skipped
+    ]
+    assert admin.build_wi_map(work_items) == {58: 10}
+
+
+# --------------------------------------------------------------------------- webhook SSRF guard
+# Policy (chosen 2026-06-27): https-only; block loopback + link-local / cloud-metadata.
+
+def _ok_resolver(_host, _port, **kw):
+    # pretend the host resolves to a public IP
+    return [(2, 1, 6, "", ("93.184.216.34", _port))]
+
+
+def test_validate_webhook_rejects_non_https():
+    assert admin.validate_webhook_url("http://hooks.zapier.com/x", _resolve=_ok_resolver) is not None
+    assert admin.validate_webhook_url("ftp://x/y", _resolve=_ok_resolver) is not None
+    assert admin.validate_webhook_url("httpfoo://x", _resolve=_ok_resolver) is not None
+
+
+def test_validate_webhook_rejects_localhost_and_no_host():
+    assert admin.validate_webhook_url("https://localhost/hook", _resolve=_ok_resolver) is not None
+    assert admin.validate_webhook_url("https://", _resolve=_ok_resolver) is not None
+
+
+def test_validate_webhook_blocks_loopback_and_metadata_literals():
+    # numeric hosts don't need DNS — the real resolver returns them as-is
+    assert admin.validate_webhook_url("https://127.0.0.1/hook") is not None       # loopback
+    assert admin.validate_webhook_url("https://169.254.169.254/latest/") is not None  # cloud metadata (link-local)
+    assert admin.validate_webhook_url("https://[::1]/hook") is not None           # ipv6 loopback
+
+
+def test_validate_webhook_blocks_public_host_resolving_to_metadata():
+    def _evil_resolver(_host, _port, **kw):
+        return [(2, 1, 6, "", ("169.254.169.254", _port))]
+    assert admin.validate_webhook_url("https://innocent.example.com/h", _resolve=_evil_resolver) is not None
+
+
+def test_validate_webhook_allows_public_https():
+    assert admin.validate_webhook_url("https://hooks.zapier.com/abc", _resolve=_ok_resolver) is None
+    # a literal public IP over https is fine too
+    assert admin.validate_webhook_url("https://93.184.216.34/h") is None

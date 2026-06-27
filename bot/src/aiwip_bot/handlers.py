@@ -15,7 +15,11 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
+from aiwip_core.logging import get_logger
+
 from aiwip_bot import authz, cards
+
+logger = get_logger("aiwip.bot.handlers")
 
 # Candidate statuses that are already settled — any approve/reject on them is a no-op (replay guard).
 _TERMINAL_STATUSES = {"approved", "rejected"}
@@ -86,7 +90,10 @@ def handle_approve(
         return HandlerResult(text="This candidate is already settled — no action taken.", did_act=False)
     work_item = api.approve_candidate(candidate_id)   # human-gated; bot never auto-approves
     push = _push_fn if _push_fn is not None else _default_push
-    push(work_item)
+    try:
+        push(work_item)  # outbound webhook is fire-and-forget — its failure must not undo the approve
+    except Exception:  # noqa: BLE001 — candidate is already approved server-side; never surface as failure
+        logger.warning("approve push side-effect failed for candidate #%s", candidate_id, exc_info=True)
     return HandlerResult(text=f"Approved #{candidate_id}.", did_act=True)
 
 
