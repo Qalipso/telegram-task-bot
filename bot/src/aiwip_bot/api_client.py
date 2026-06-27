@@ -180,6 +180,29 @@ class ApiClient:
         """PATCH /api/candidates/{id} — edit fields (priority, due, assignee, …)."""
         return self._request("PATCH", f"/api/candidates/{candidate_id}", json=payload).json()
 
+    def sync_chat(self, chat_id: int) -> dict:
+        """POST /api/sync/run — enqueue a manual sync job for the given external chat id."""
+        return self._request("POST", "/api/sync/run", json={"chat_id": chat_id}).json()
+
+    def sync_status(self) -> dict:
+        """GET /api/sync/status — per-chat last-sync state (keyed by external_chat_id)."""
+        return self._request("GET", "/api/sync/status").json()
+
+    def list_candidates(
+        self,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """GET /api/candidates — optionally filtered by status, newest first."""
+        params: dict[str, Any] = {"limit": limit}
+        if status is not None:
+            params["status"] = status
+        return self._request("GET", "/api/candidates", params=params).json()
+
+    def list_work_items(self) -> list[dict]:
+        """GET /api/work-items — all work items visible to the admin (approved candidates)."""
+        return self._request("GET", "/api/work-items").json()
+
     def list_assignees(self, active: bool = True) -> list[dict]:
         """GET /api/assignees?active=… — assignee picker source for the 'assign' card."""
         return self._request(

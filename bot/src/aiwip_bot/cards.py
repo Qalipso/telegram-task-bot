@@ -13,6 +13,9 @@ TITLE_MAX_LEN = 120
 SUMMARY_MAX_LEN = 280
 ELLIPSIS = "…"
 
+PRIORITY_LABELS = {"low": "Низкий", "medium": "Средний", "high": "Высокий", "critical": "Срочно"}
+_TYPE_LABELS = {"task": "Задача", "idea": "Идея", "reminder": "Напоминание", "issue": "Проблема"}
+
 
 def _truncate(value: str | None, limit: int) -> str:
     if not value:
@@ -31,38 +34,47 @@ def format_candidate_text(candidate: dict) -> str:
     """CandidateOut dict -> human-readable card body. Pure string; no side effects."""
     cid = candidate.get("id")
     ctype = candidate.get("candidate_type", "item")
-    title = _truncate(candidate.get("title"), TITLE_MAX_LEN) or "(no title)"
+    type_label = _TYPE_LABELS.get(ctype, ctype.capitalize())
+    title = _truncate(candidate.get("title"), TITLE_MAX_LEN) or "(без названия)"
     summary = _truncate(candidate.get("summary"), SUMMARY_MAX_LEN)
-    priority = candidate.get("priority") or "—"
-    due = candidate.get("due_date") or "—"
+    priority = candidate.get("priority") or ""
+    due_raw = candidate.get("due_date") or ""
+    due = due_raw[:10] if due_raw else ""
     status = candidate.get("status", "")
     task_conf = _confidence_pct(candidate.get("task_confidence"))
 
-    lines = [
-        f"📥 {ctype.capitalize()} #{cid}",
-        f"*{title}*",
-    ]
-    if summary:
+    lines = [f"📥 {type_label} #{cid}", f"*{title}*"]
+
+    if summary and summary.lower() != (candidate.get("title") or "").lower():
         lines.append(summary)
-    lines.append(f"Priority: {priority}   Due: {due}   Confidence: {task_conf}")
+
+    meta: list[str] = []
+    if priority:
+        meta.append(f"⚡ {PRIORITY_LABELS.get(priority, priority)}")
+    if due:
+        meta.append(f"📅 {due}")
+    meta.append(f"🎯 {task_conf}")
+    lines.append("  •  ".join(meta))
 
     missing = candidate.get("missing_fields") or []
-    if missing:
-        lines.append("⚠ Missing: " + ", ".join(missing))
-
     if candidate.get("assignee_ambiguous"):
         mentions = candidate.get("unresolved_mentions") or []
         who = ", ".join(mentions) if mentions else "?"
-        lines.append(f"❓ Ambiguous assignee — who is: {who}")
+        lines.append(f"❓ Неоднозначно — кто из: {who}")
     elif (candidate.get("assignee_count") or 0) == 0:
         mentions = candidate.get("unresolved_mentions") or []
         if mentions:
-            lines.append("👤 Unassigned — mentioned: " + ", ".join(mentions))
+            lines.append(f"👤 Без ответственного  (упомянут: {', '.join(mentions)})")
         else:
-            lines.append("👤 Unassigned")
+            lines.append("👤 Ответственный не назначен")
 
-    if status and status != "new":
-        lines.append(f"_status: {status}_")
+    if missing:
+        lines.append("⚠️ Не хватает: " + ", ".join(missing))
+
+    _STATUS_LABELS = {"edited": "✏️ изменено", "needs_review": "⏳ на ревью"}
+    if status and status not in ("new", "approved", "rejected"):
+        label = _STATUS_LABELS.get(status, status)
+        lines.append(label)
     return "\n".join(lines)
 
 
@@ -100,21 +112,53 @@ def build_keyboard(candidate: dict) -> InlineKeyboardMarkup:
 
     rows: list[list[InlineButton]] = []
 
-    # A bare one-tap Approve is offered ONLY for a clean, ready candidate (§6.2 low-friction band):
-    # status == new AND no missing fields AND exactly one resolved assignee.
-    ready = status == "new" and not missing and assignee_count == 1 and not ambiguous
+    # Approve is shown for any actionable (non-terminal) candidate that has a resolved assignee
+    # and no blocking missing fields. "edited" is actionable — it just means an assignee was set.
+    _ACTIONABLE = {"new", "edited", "needs_review"}
+    ready = status in _ACTIONABLE and not missing and assignee_count >= 1 and not ambiguous
     if ready:
         rows.append([_btn("✅ Approve", "approve", cid)])
 
-    # Assignee disambiguation / assignment row (§6.1 bot UX).
+    # Assignee row — always show so the admin can change/add an assignee at any time.
     if ambiguous:
-        rows.append([_btn("❓ Who?", "who", cid)])
+        rows.append([_btn("❓ Кто?", "who", cid), _btn("👤 Назначить", "assign", cid)])
     elif assignee_count == 0:
-        rows.append([_btn("👤 Assign…", "assign", cid)])
+        rows.append([_btn("👤 Назначить", "assign", cid)])
+    else:
+        rows.append([_btn("👤 Сменить", "assign", cid)])
 
-    # Reject is always available; it is never destructive of an approved item (server-guarded).
-    rows.append([_btn("✏️ Edit", "edit", cid), _btn("🗑 Reject", "reject", cid)])
+    rows.append([_btn("✏️ Изменить", "edit", cid), _btn("🗑 Отклонить", "reject", cid)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+_PRIORITY_PICKER_PAIRS = [
+    [("🔴 Срочно", "critical"), ("🟠 Высокий", "high")],
+    [("🟡 Средний", "medium"), ("🟢 Низкий", "low")],
+]
+
+
+def render_edit_menu(candidate: dict) -> CardMessage:
+    """Edit submenu: priority picker + instructions for /title and /due."""
+    cid = int(candidate["id"])
+    title = _truncate(candidate.get("title"), 60) or "(без названия)"
+    priority = candidate.get("priority") or ""
+    priority_label = PRIORITY_LABELS.get(priority, priority or "—")
+    due = (candidate.get("due_date") or "—")[:10]
+
+    text = (
+        f"✏️ Редактировать #{cid}\n"
+        f"*{title}*\n\n"
+        f"Приоритет: {priority_label}   Срок: {due}\n\n"
+        "Выбери приоритет ↓\n"
+        "Или напиши боту в личку:\n"
+        f"`/title {cid} новое название`\n"
+        f"`/due {cid} ГГГГ-ММ-ДД`"
+    )
+    rows: list[list[InlineButton]] = []
+    for pair in _PRIORITY_PICKER_PAIRS:
+        rows.append([InlineButton(label, f"eprio{CB_SEP}{cid}{CB_SEP}{val}") for label, val in pair])
+    rows.append([InlineButton("↩ К задаче", f"eback{CB_SEP}{cid}")])
+    return CardMessage(candidate_id=cid, text=text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 @dataclass(frozen=True)

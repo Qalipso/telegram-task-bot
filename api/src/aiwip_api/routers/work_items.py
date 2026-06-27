@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, false, select
 from sqlalchemy.orm import Session
 
-from aiwip_api import auth
+from aiwip_api import auth, enrich
 from aiwip_api.schemas import AssignLabelRequest, StatusChangeRequest, WorkItemOut
 from aiwip_core import audit
 from aiwip_core.models import (
@@ -59,15 +59,16 @@ def list_work_items(
     query = select(WorkItem).order_by(desc(WorkItem.id))
     if status_filter is not None:
         query = query.where(WorkItem.status == status_filter)
-    return db.execute(_scope(db, user, query)).scalars().all()
+    items = db.execute(_scope(db, user, query)).scalars().all()
+    return enrich.work_items_out(db, items)
 
 
 @router.get("/board")
 def board(user: User = Depends(auth.get_current_user), db: Session = Depends(auth.get_db)) -> dict:
     items = db.execute(_scope(db, user, select(WorkItem).order_by(WorkItem.id))).scalars().all()
     columns: dict[str, list] = {s.value: [] for s in WorkItemStatus}
-    for wi in items:
-        columns[wi.status.value].append(WorkItemOut.model_validate(wi).model_dump())
+    for wi in enrich.work_items_out(db, items):
+        columns[wi.status.value].append(wi.model_dump())
     return {"columns": columns}
 
 

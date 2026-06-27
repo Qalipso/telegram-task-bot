@@ -36,13 +36,21 @@ def _open(db: Session, api, telegram_user_id: int, candidate_id: int) -> handler
 
 def dispatch_callback(db: Session, api, data: str, telegram_user_id: int) -> handlers.HandlerResult:
     """Route one callback_data string to its handler. Never raises on bad input."""
-    # "pick:<candidate_id>:<assignee_id>" has a different arity, so route it before parse_callback.
+    # "pick:<candidate_id>:<assignee_id>" — different arity, route before parse_callback.
     if data.startswith("pick" + cards.CB_SEP):
         try:
             candidate_id, assignee_id = handlers.parse_pick_callback(data)
         except ValueError:
             return _denied(_INVALID_BUTTON)
         return handlers.handle_pick_assignee(db, api, telegram_user_id, candidate_id, assignee_id)
+
+    # "eprio:<candidate_id>:<priority>" — set priority inline.
+    if data.startswith("eprio" + cards.CB_SEP):
+        try:
+            candidate_id, priority = handlers.parse_eprio_callback(data)
+        except ValueError:
+            return _denied(_INVALID_BUTTON)
+        return handlers.handle_set_priority(db, api, telegram_user_id, candidate_id, priority)
 
     try:
         action, candidate_id = handlers.parse_callback(data)
@@ -60,5 +68,7 @@ def dispatch_callback(db: Session, api, data: str, telegram_user_id: int) -> han
     if action == "edit":
         return handlers.handle_edit(db, api, telegram_user_id, candidate_id)
     if action == "open":
+        return _open(db, api, telegram_user_id, candidate_id)
+    if action == "eback":
         return _open(db, api, telegram_user_id, candidate_id)
     return _denied(_INVALID_BUTTON)

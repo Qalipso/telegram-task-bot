@@ -62,9 +62,7 @@ def test_ready_card_has_approve_reject_assign():
     markup = cards.build_keyboard(_cand(status="new", missing_fields=[], assignee_count=1))
     texts = _btn_texts(markup)
     assert any("Approve" in t for t in texts)
-    assert any("Reject" in t for t in texts)
-    # 'Assign' surfaces when there is something to assign; for a ready (1-assignee) card the row
-    # offers Edit/Reject. The §6.1 Assign/Who path is covered by the dedicated tests below.
+    assert any("Отклонить" in t for t in texts)
 
 
 def test_no_approve_all_button_ever():
@@ -77,19 +75,19 @@ def test_needs_review_has_no_one_tap_approve():
     markup = cards.build_keyboard(_cand(status="needs_review", missing_fields=["due_date"], assignee_count=1))
     texts = _btn_texts(markup)
     assert not any(t.strip() in ("Approve", "✅ Approve") for t in texts)
-    assert any("Reject" in t for t in texts)
+    assert any("Отклонить" in t for t in texts)
 
 
 def test_ambiguous_assignee_offers_who():
     markup = cards.build_keyboard(_cand(status="needs_review", assignee_count=0, assignee_ambiguous=True))
     texts = _btn_texts(markup)
-    assert any("Who" in t for t in texts)
+    assert any("Кто" in t for t in texts)
 
 
 def test_unassigned_offers_assign():
     markup = cards.build_keyboard(_cand(status="needs_review", missing_fields=["assignee"], assignee_count=0))
     texts = _btn_texts(markup)
-    assert any("Assign" in t for t in texts)
+    assert any("Назначить" in t for t in texts)
 
 
 def test_callback_data_carries_candidate_id():

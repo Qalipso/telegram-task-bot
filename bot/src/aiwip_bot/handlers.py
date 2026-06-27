@@ -11,6 +11,7 @@ the Approve button, and it still goes through the human-gated POST /api/candidat
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,8 @@ from aiwip_bot import authz, cards
 _TERMINAL_STATUSES = {"approved", "rejected"}
 
 _ASK_ADMIN = "You are not authorized to do this. Please ask an admin."
+
+_VALID_PRIORITIES = {"low", "medium", "high", "critical"}
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,14 @@ def parse_pick_callback(data: str) -> tuple[int, int]:
     return int(parts[1]), int(parts[2])
 
 
+def parse_eprio_callback(data: str) -> tuple[int, str]:
+    """Parse "eprio:<candidate_id>:<priority>" -> (candidate_id, priority)."""
+    parts = data.split(cards.CB_SEP)
+    if len(parts) != 3 or parts[0] != "eprio":
+        raise ValueError(f"malformed eprio callback_data: {data!r}")
+    return int(parts[1]), parts[2]
+
+
 def _guard(db: Session, api, telegram_user_id: int, candidate_id: int):
     """Shared §6.4 guard.
 
@@ -60,14 +71,31 @@ def _guard(db: Session, api, telegram_user_id: int, candidate_id: int):
     return decision, candidate
 
 
-def handle_approve(db: Session, api, telegram_user_id: int, candidate_id: int) -> HandlerResult:
+def handle_approve(
+    db: Session,
+    api,
+    telegram_user_id: int,
+    candidate_id: int,
+    *,
+    _push_fn: Callable[[dict], None] | None = None,
+) -> HandlerResult:
     guard, candidate = _guard(db, api, telegram_user_id, candidate_id)
     if candidate is None:
         return guard  # denied
     if candidate.get("status") in _TERMINAL_STATUSES:
         return HandlerResult(text="This candidate is already settled — no action taken.", did_act=False)
-    api.approve_candidate(candidate_id)               # human-gated endpoint; bot never auto-approves
+    work_item = api.approve_candidate(candidate_id)   # human-gated; bot never auto-approves
+    push = _push_fn if _push_fn is not None else _default_push
+    push(work_item)
     return HandlerResult(text=f"Approved #{candidate_id}.", did_act=True)
+
+
+def _default_push(work_item: dict) -> None:
+    """Push to outbound webhook if one is configured (fire-and-forget, failure logged not raised)."""
+    from . import admin as _admin, state as _state  # lazy to avoid circular at module load
+    url = _state.get_admin_webhook()
+    if url:
+        _admin.push_webhook(work_item, url)
 
 
 def handle_reject(db: Session, api, telegram_user_id: int, candidate_id: int) -> HandlerResult:
@@ -95,11 +123,11 @@ def handle_assign(db: Session, api, telegram_user_id: int, candidate_id: int) ->
     if candidate is None:
         return guard  # denied
     picker = _assignee_picker(api, candidate_id)
-    card = cards.CardMessage(candidate_id=candidate_id, text="Who is responsible?", reply_markup=picker)
-    return HandlerResult(text="Pick an assignee.", card=card, did_act=False)
+    card = cards.CardMessage(candidate_id=candidate_id, text="Выбери ответственного:", reply_markup=picker)
+    return HandlerResult(text="Выбери ответственного.", card=card, did_act=False)
 
 
-# 'Who?' (ambiguity) and 'Assign…' (zero match) present the same picker.
+# 'Кто?' (ambiguity) and 'Назначить' (zero match) present the same picker.
 handle_who = handle_assign
 
 
@@ -112,15 +140,36 @@ def handle_pick_assignee(
     if candidate.get("status") in _TERMINAL_STATUSES:
         return HandlerResult(text="This candidate is already settled — no action taken.", did_act=False)
     api.patch_candidate(candidate_id, {"assignee_ids": [assignee_id]})
-    return HandlerResult(text=f"Assigned #{candidate_id}.", did_act=True)
+    # Re-fetch and re-render the card so the user sees the updated state (with Approve button)
+    updated_envelope = api.get_candidate(candidate_id)
+    updated_candidate = updated_envelope.get("candidate", updated_envelope)
+    refreshed_card = cards.render_card(updated_candidate)
+    return HandlerResult(text=f"Назначен #{candidate_id}.", card=refreshed_card, did_act=True)
 
 
 def handle_edit(db: Session, api, telegram_user_id: int, candidate_id: int) -> HandlerResult:
-    # Free-text title/summary editing is a documented fast-follow (spec §15). For MVP, authorize
-    # then direct the admin to the web console for full edits.
+    """Open the edit submenu: inline priority picker + /title and /due instructions."""
     guard, candidate = _guard(db, api, telegram_user_id, candidate_id)
     if candidate is None:
         return guard  # denied
-    return HandlerResult(
-        text=f"Edit #{candidate_id} fields in the web console for now.", did_act=False
-    )
+    card = cards.render_edit_menu(candidate)
+    return HandlerResult(text="Редактирование", card=card, did_act=False)
+
+
+def handle_set_priority(
+    db: Session, api, telegram_user_id: int, candidate_id: int, priority: str
+) -> HandlerResult:
+    """Patch the candidate's priority, then re-render the card."""
+    guard, candidate = _guard(db, api, telegram_user_id, candidate_id)
+    if candidate is None:
+        return guard  # denied
+    if candidate.get("status") in _TERMINAL_STATUSES:
+        return HandlerResult(text="This candidate is already settled — no action taken.", did_act=False)
+    if priority not in _VALID_PRIORITIES:
+        return HandlerResult(text=f"Недопустимый приоритет: {priority!r}.", did_act=False)
+    api.patch_candidate(candidate_id, {"priority": priority})
+    updated_envelope = api.get_candidate(candidate_id)
+    updated_candidate = updated_envelope.get("candidate", updated_envelope)
+    refreshed_card = cards.render_card(updated_candidate)
+    prio_label = cards.PRIORITY_LABELS.get(priority, priority)
+    return HandlerResult(text=f"Приоритет → {prio_label}", card=refreshed_card, did_act=True)

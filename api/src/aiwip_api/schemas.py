@@ -89,6 +89,9 @@ class CandidateOut(BaseModel):
     # §6.1C: raw unmatched/ambiguous mention text, for the [Assign…] picker title.
     unresolved_mentions: list[str] | None = None
     created_at: dt.datetime
+    # Source chat (external Telegram id + title) — set by the enrich layer, default None.
+    source_chat_id: int | None = None
+    source_chat_title: str | None = None
 
     # Populated from the ORM relationship Candidate.candidate_assignees; excluded from output.
     # Reduced to a list of assignee ids so we can derive assignee_count without a nested schema.
@@ -140,6 +143,10 @@ class WorkItemOut(BaseModel):
     due_date: dt.datetime | None = None
     status: WorkItemStatus
     source_candidate_id: int
+    # Enriched fields (set by the enrich layer; default empty/None so model_validate(orm) works).
+    assignees: list[str] = Field(default_factory=list)  # display names, primary first
+    source_chat_id: int | None = None  # external Telegram chat id
+    source_chat_title: str | None = None
 
 
 class StatusChangeRequest(BaseModel):

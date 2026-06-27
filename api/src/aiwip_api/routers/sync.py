@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from aiwip_api import auth
 from aiwip_core import queue
 from aiwip_core.config import settings
-from aiwip_core.models import SyncRun, SyncState, User
+from aiwip_core.models import Chat, SyncRun, SyncState, User
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 
@@ -45,18 +45,24 @@ def run_sync(
 @router.get("/status")
 def sync_status(admin: User = Depends(auth.require_admin), db: Session = Depends(auth.get_db)) -> dict:
     latest = db.execute(select(SyncRun).order_by(desc(SyncRun.id)).limit(1)).scalar_one_or_none()
-    states = db.execute(select(SyncState)).scalars().all()
+    # Join Chat so the bot (which identifies chats by external id) can match each state.
+    rows = db.execute(
+        select(SyncState, Chat.external_chat_id, Chat.title)
+        .join(Chat, Chat.id == SyncState.chat_id)
+    ).all()
     return {
         "queue_length": queue.queue_length(),
         "latest_run": _run_dict(latest) if latest else None,
         "states": [
             {
                 "chat_id": s.chat_id,
+                "external_chat_id": ext_id,
+                "chat_title": title,
                 "last_external_message_id": s.last_external_message_id,
                 "last_successful_sync_at": s.last_successful_sync_at.isoformat() if s.last_successful_sync_at else None,
                 "last_error": s.last_error,
             }
-            for s in states
+            for s, ext_id, title in rows
         ],
     }
 

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
-from aiwip_api import auth
+from aiwip_api import auth, enrich
 from aiwip_api.schemas import CandidateOut, UpdateCandidateRequest, WorkItemOut
 from aiwip_core import audit, promotion
 from aiwip_core.models import (
@@ -76,13 +76,15 @@ def _set_candidate_assignees(db: Session, candidate: Candidate, assignee_ids: li
 @router.get("", response_model=list[CandidateOut])
 def list_candidates(
     status_filter: CandidateStatus | None = Query(None, alias="status"),
+    limit: int = Query(100, ge=1, le=500),
     _admin: User = Depends(auth.require_admin),
     db: Session = Depends(auth.get_db),
 ):
-    query = select(Candidate).order_by(desc(Candidate.id))
+    query = select(Candidate).order_by(desc(Candidate.id)).limit(limit)
     if status_filter is not None:
         query = query.where(Candidate.status == status_filter)
-    return db.execute(query).scalars().all()
+    items = db.execute(query).scalars().all()
+    return enrich.candidates_out(db, items)
 
 
 @router.get("/{candidate_id}")

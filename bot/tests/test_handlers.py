@@ -138,6 +138,8 @@ def test_pick_assignee_patches_candidate(db):
     res = handlers.handle_pick_assignee(db, api, telegram_user_id=612, candidate_id=5, assignee_id=11)
     assert res.did_act is True
     assert api.patched == [(5, {"assignee_ids": [11]})]
+    # After picking, a refreshed card is returned so the user can tap Approve immediately
+    assert res.card is not None
 
 
 def test_pick_assignee_denied_for_non_admin(db):
@@ -152,9 +154,37 @@ def test_pick_assignee_denied_for_non_admin(db):
     assert api.patched == []
 
 
-def test_edit_is_authorized_but_directs_to_console(db):
+def test_edit_opens_edit_menu_card(db):
     _admin(db, tg_id=614)
     api = FakeApiClient(_READY)
     res = handlers.handle_edit(db, api, telegram_user_id=614, candidate_id=5)
     assert res.did_act is False
-    assert "console" in res.text.lower() or "web" in res.text.lower()
+    assert res.card is not None
+    # Edit menu shows priority buttons
+    all_buttons = [b.callback_data for row in res.card.reply_markup.inline_keyboard for b in row]
+    assert any("eprio" in cb for cb in all_buttons)
+    assert any("eback" in cb for cb in all_buttons)
+
+
+def test_set_priority_patches_candidate(db):
+    _admin(db, tg_id=615)
+    api = FakeApiClient(_READY)
+    res = handlers.handle_set_priority(db, api, telegram_user_id=615, candidate_id=5, priority="high")
+    assert res.did_act is True
+    assert api.patched == [(5, {"priority": "high"})]
+    assert res.card is not None
+
+
+def test_set_priority_invalid_value(db):
+    _admin(db, tg_id=616)
+    api = FakeApiClient(_READY)
+    res = handlers.handle_set_priority(db, api, telegram_user_id=616, candidate_id=5, priority="ultra")
+    assert res.did_act is False
+    assert api.patched == []
+
+
+def test_set_priority_denied_for_unlinked(db):
+    api = FakeApiClient(_READY)
+    res = handlers.handle_set_priority(db, api, telegram_user_id=999, candidate_id=5, priority="high")
+    assert res.did_act is False
+    assert api.patched == []

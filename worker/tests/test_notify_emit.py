@@ -48,6 +48,36 @@ def test_run_pipeline_emits_bot_notify(db):
     r.delete(queue.NOTIFY_KEY)
 
 
+def test_run_pipeline_no_notify_when_no_assignee_resolved(db):
+    """Candidates with no resolved assignee are silently dropped — not surfaced as cards."""
+    r = get_redis()
+    r.delete(queue.NOTIFY_KEY)
+    ext = 8202
+    # NO assignee row added — "ghost" mention will not resolve.
+    db.flush()
+    _unassigned_task = {
+        "candidates": [{
+            "type": "task", "title": "Do the thing", "summary": "Do it",
+            "priority": "high", "due_date": "2026-06-05", "assignees": ["ghost"],
+            "source_message_ids": [1], "supporting_message_ids": [], "reasoning_summary": "ask",
+            "missing_fields": [],
+            "confidence": {"item": 0.95, "context": 0.8, "assignee": 0.5, "priority": 0.7, "due_date": 0.8},
+        }],
+        "context_summary": "x", "context_confidence": 0.8,
+    }
+    msgs = [FetchedMessage(
+        external_message_id=1, sender_external_id=1, sender_username="alice",
+        sender_display_name="Alice", text="@ghost do the thing",
+        sent_at=BASE + dt.timedelta(minutes=1), raw={"id": 1},
+    )]
+    consumer.run_pipeline(
+        db, FakeConnector({ext: msgs}), ext, m.SyncTriggerType.manual,
+        llm_client=FakeLLMClient(_unassigned_task),
+    )
+    assert r.llen(queue.NOTIFY_KEY) == 0  # unresolved assignee → no card surfaced
+    r.delete(queue.NOTIFY_KEY)
+
+
 def test_run_pipeline_no_notify_when_nothing_saved(db):
     """A re-sync that saves 0 messages skips extraction → emits no notify."""
     r = get_redis()

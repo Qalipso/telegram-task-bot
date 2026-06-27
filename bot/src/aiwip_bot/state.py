@@ -68,17 +68,20 @@ def set_chat_config(
     surface_mode: str = "cards",
     debounce_seconds: int | None = None,
     quiet_hours: dict[str, Any] | None = None,
+    title: str | None = None,
 ) -> dict[str, Any]:
     """Persist the per-chat config and mark the chat configured. Returns the stored dict.
 
     Stored with no TTL — onboarding state must survive bot restarts (spec §7: capture begins only
     after the chat is configured, and stays configured)."""
+    existing = get_chat_config(chat_id) or {}
     cfg: dict[str, Any] = {
         "destination": destination,
         "surface_mode": surface_mode,
         "debounce_seconds": debounce_seconds,
         "quiet_hours": quiet_hours,
         "configured": True,
+        "title": title or existing.get("title"),  # preserve existing title if not provided
     }
     get_redis().set(chat_config_key(chat_id), json.dumps(cfg))
     return cfg
@@ -87,3 +90,55 @@ def set_chat_config(
 def clear_chat_config(chat_id: int) -> None:
     """Remove a chat's config (used when the bot is removed from a group, or to re-onboard)."""
     get_redis().delete(chat_config_key(chat_id))
+
+
+# --- Admin panel: outbound webhook (/setwebhook) ---
+ADMIN_WEBHOOK_KEY = "aiwip:admin:webhook"
+
+
+def get_admin_webhook() -> str | None:
+    raw = get_redis().get(ADMIN_WEBHOOK_KEY)
+    if raw is None:
+        return None
+    return raw.decode() if isinstance(raw, bytes) else raw
+
+
+def set_admin_webhook(url: str) -> None:
+    get_redis().set(ADMIN_WEBHOOK_KEY, url)
+
+
+def clear_admin_webhook() -> None:
+    get_redis().delete(ADMIN_WEBHOOK_KEY)
+
+
+# --- Admin panel: per-chat capture pause ---
+_CHAT_PAUSED_PREFIX = "aiwip:botpause:"
+
+
+def _pause_key(chat_id: int) -> str:
+    return f"{_CHAT_PAUSED_PREFIX}{chat_id}"
+
+
+def is_chat_paused(chat_id: int) -> bool:
+    return bool(get_redis().exists(_pause_key(chat_id)))
+
+
+def pause_chat(chat_id: int) -> None:
+    get_redis().set(_pause_key(chat_id), "1")
+
+
+def resume_chat(chat_id: int) -> None:
+    get_redis().delete(_pause_key(chat_id))
+
+
+def list_configured_chats() -> list[int]:
+    """Return external chat IDs that have an onboarding config key."""
+    r = get_redis()
+    ids: list[int] = []
+    for key in r.scan_iter(f"{CHAT_CONFIG_PREFIX}*"):
+        key_str = key.decode() if isinstance(key, bytes) else key
+        try:
+            ids.append(int(key_str.split(":")[-1]))
+        except ValueError:
+            pass
+    return ids

@@ -84,7 +84,8 @@ def run_pipeline(
         try:
             created = extract.extract_candidates(db, chat.id, client=llm_client)
             for cand in created:
-                queue.enqueue_notify(cand.id)  # worker → bot: render a confirm card
+                if cand.candidate_assignees:  # only surface when at least one assignee resolved
+                    queue.enqueue_notify(cand.id)
         except Exception:  # noqa: BLE001 — extraction failure must not fail the sync job
             logger.exception("extraction failed chat=%s", chat_id)
         _mark_analyzed(db, chat.id)
