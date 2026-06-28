@@ -345,6 +345,41 @@ table.tbl tr.clickable:focus-visible td { background: var(--accent-50); }
 .assignee-chip.primary { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-100); }
 .add-label-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 
+/* ---- toasts (Slice 4) ------------------------------------------------ */
+.toast-region {
+  position: fixed; bottom: 20px; right: 20px; z-index: 60;
+  display: flex; flex-direction: column; gap: 10px;
+  max-width: min(380px, calc(100vw - 40px)); pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 10px 11px 14px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  box-shadow: var(--elev-3); font-size: 13px; font-weight: 550;
+  animation: toastin var(--dur) var(--ease-out);
+}
+@keyframes toastin { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+.toast-success { border-left: 3px solid var(--success); }
+.toast-error { border-left: 3px solid var(--danger); }
+.toast-info { border-left: 3px solid var(--accent); }
+.toast-msg { flex: 1; color: var(--text); }
+.toast-action {
+  font: inherit; font-weight: 650; font-size: 12.5px; cursor: pointer; white-space: nowrap;
+  background: var(--accent-soft); color: var(--accent-ink);
+  border: 1px solid var(--accent-100); border-radius: var(--radius-sm); padding: 4px 10px;
+}
+.toast-action:hover { background: var(--accent-100); }
+.toast-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border: none; background: transparent; cursor: pointer;
+  color: var(--text-faint); border-radius: 6px; flex-shrink: 0;
+}
+.toast-close:hover { background: var(--surface-2); color: var(--text); }
+@media (max-width: 480px) {
+  .toast-region { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+}
+
 /* ---- login ----------------------------------------------------------- */
 .login-wrap {
   display: flex; min-height: 100vh; align-items: center; justify-content: center;

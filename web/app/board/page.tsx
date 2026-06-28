@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import { apiGet, apiPost, ApiError } from "../lib/api";
 import { Drawer } from "../components/Drawer";
+import { useToast } from "../components/Toast";
 import {
   PriorityBadge, TypeBadge, StatusBadge, fmtDate, Icon,
   WORK_STATUSES, STATUS_LABEL, COLUMN_ACCENT, PRIORITY_LABEL,
@@ -25,6 +26,7 @@ function KanbanBoard() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<WorkItemStatus | null>(null);
   const [selected, setSelected] = useState<WorkItemDetail | null>(null);
+  const { toast } = useToast();
 
   const [search, setSearch] = useState("");
   const [filterPriority, setFilterPriority] = useState<Priority | "">("");
@@ -73,8 +75,12 @@ function KanbanBoard() {
     try {
       await apiPost(`/api/work-items/${item.id}/status`, { status: to });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Status change failed.");
       load();
+      toast({
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Status change failed.",
+        action: { label: "Retry", onClick: () => move(item, to) },
+      });
     }
   }
 
@@ -253,16 +259,21 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
 }) {
   const [detail, setDetail] = useState<WorkItemDetail>(initial);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<Label[]>([]);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const { toast } = useToast();
   const wi = detail.work_item;
   const titleId = `wi-${wi.id}-title`;
 
   useEffect(() => {
-    apiGet<Label[]>("/api/labels").then(setCatalog).catch(() => {});
-  }, []);
+    apiGet<Label[]>("/api/labels").then(setCatalog).catch((e) => {
+      // 403 = non-admin: degrade silently (no label UI). Surface anything else.
+      if (!(e instanceof ApiError && e.status === 403)) {
+        toast({ kind: "error", message: "Couldn't load the label catalog." });
+      }
+    });
+  }, [toast]);
 
   async function refetch() {
     setDetail(await apiGet<WorkItemDetail>(`/api/work-items/${wi.id}`));
@@ -270,29 +281,41 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
 
   async function changeStatus(to: WorkItemStatus) {
     if (to === wi.status) return;
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       await apiPost(`/api/work-items/${wi.id}/status`, { status: to });
       setDetail({ ...detail, work_item: { ...wi, status: to } });
       onBoardChanged();
-    } catch (e) { setErr(e instanceof ApiError ? e.message : "Status change failed."); }
-    finally { setBusy(false); }
+      toast({ kind: "success", message: `Moved to ${STATUS_LABEL[to]}.` });
+    } catch (e) {
+      toast({
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Status change failed.",
+        action: { label: "Retry", onClick: () => changeStatus(to) },
+      });
+    } finally { setBusy(false); }
   }
 
   async function assignLabel(labelId: number) {
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       await apiPost(`/api/work-items/${wi.id}/labels`, { label_id: labelId });
       await refetch();
       onBoardChanged();
-    } catch (e) { setErr(e instanceof ApiError ? e.message : "Could not add label."); }
-    finally { setBusy(false); }
+      toast({ kind: "success", message: "Label added." });
+    } catch (e) {
+      toast({
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Could not add label.",
+        action: { label: "Retry", onClick: () => assignLabel(labelId) },
+      });
+    } finally { setBusy(false); }
   }
 
   async function createAndAssign() {
     const name = newName.trim();
     if (!name) return;
-    setBusy(true); setErr(null);
+    setBusy(true);
     try {
       const color = LABEL_PALETTE[catalog.length % LABEL_PALETTE.length];
       const created = await apiPost<Label>("/api/labels", { name, color });
@@ -301,8 +324,14 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
       await refetch();
       onBoardChanged();
       setNewName(""); setAdding(false);
-    } catch (e) { setErr(e instanceof ApiError ? e.message : "Could not create label."); }
-    finally { setBusy(false); }
+      toast({ kind: "success", message: `Label “${name}” created.` });
+    } catch (e) {
+      toast({
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Could not create label.",
+        action: { label: "Retry", onClick: () => createAndAssign() },
+      });
+    } finally { setBusy(false); }
   }
 
   const colorOf = (id: number, fallback: string | null) =>
@@ -327,8 +356,6 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
           <PriorityBadge priority={wi.priority} />
           {wi.due_date && <span className="badge">due {fmtDate(wi.due_date)}</span>}
         </div>
-
-        {err && <div className="banner error" role="alert" style={{ margin: "10px 0" }}>{err}</div>}
 
         <div className="kv">
           <span className="k">Status</span>
