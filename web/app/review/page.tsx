@@ -174,6 +174,12 @@ function CandidateDrawer({ detail, assignees, onClose, onChanged }: {
     onChanged();
   }, "Reject");
 
+  const markDuplicate = () => run(async () => {
+    await apiPost(`/api/candidates/${c.id}/duplicate`);
+    toast({ kind: "info", message: "Marked as duplicate." });
+    onChanged();
+  }, "Mark duplicate");
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
@@ -250,7 +256,8 @@ function CandidateDrawer({ detail, assignees, onClose, onChanged }: {
             <div className="row" style={{ gap: 8, paddingTop: 4 }}>
               <button className="btn" onClick={save} disabled={busy}>Save edits</button>
               <button className="btn success" onClick={approve} disabled={busy}>✓ Approve → Work Item</button>
-              <button className="btn danger-outline right" onClick={reject} disabled={busy}>Reject</button>
+              <button className="btn ghost right" onClick={markDuplicate} disabled={busy}>Mark duplicate</button>
+              <button className="btn danger-outline" onClick={reject} disabled={busy}>Reject</button>
             </div>
           )}
         </div>

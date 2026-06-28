@@ -199,3 +199,21 @@ def reject_candidate(
     db.commit()
     db.refresh(candidate)
     return candidate
+
+
+@router.post("/{candidate_id}/duplicate", response_model=CandidateOut)
+def mark_candidate_duplicate(
+    candidate_id: int, admin: User = Depends(auth.require_admin), db: Session = Depends(auth.get_db)
+) -> Candidate:
+    candidate = _get_or_404(db, candidate_id)
+    if candidate.status == CandidateStatus.approved:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Cannot mark an approved candidate as duplicate")
+    candidate.status = CandidateStatus.duplicate
+    candidate.reviewed_at = dt.datetime.now(dt.timezone.utc)
+    candidate.reviewed_by_user_id = admin.id
+    audit.record_audit(
+        db, admin.id, AuditAction.candidate_marked_duplicate, AuditEntityType.candidate, candidate.id
+    )
+    db.commit()
+    db.refresh(candidate)
+    return candidate

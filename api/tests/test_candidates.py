@@ -102,6 +102,30 @@ def test_reject_keeps_history_and_audits(client, db):
     assert db.query(m.AuditLog).filter_by(action=m.AuditAction.candidate_rejected).count() == 1
 
 
+def test_mark_duplicate_sets_status_and_audits(client, db):
+    _login(client, db, m.UserRole.admin)
+    cand = _seed_candidate(db)
+    r = client.post(f"/api/candidates/{cand.id}/duplicate")
+    assert r.status_code == 200 and r.json()["status"] == "duplicate"
+    db.refresh(cand)
+    assert cand.status == m.CandidateStatus.duplicate
+    assert cand.reviewed_by_user_id is not None
+    assert db.get(m.Candidate, cand.id) is not None  # retained in history
+    assert db.query(m.AuditLog).filter_by(action=m.AuditAction.candidate_marked_duplicate).count() == 1
+
+
+def test_mark_duplicate_rejects_approved(client, db):
+    _login(client, db, m.UserRole.admin)
+    cand = _seed_candidate(db, status=m.CandidateStatus.approved)
+    assert client.post(f"/api/candidates/{cand.id}/duplicate").status_code == 409
+
+
+def test_mark_duplicate_requires_admin(client, db):
+    _login(client, db, m.UserRole.assignee)
+    cand = _seed_candidate(db)
+    assert client.post(f"/api/candidates/{cand.id}/duplicate").status_code == 403
+
+
 def test_role_enforcement(client, db):
     _login(client, db, m.UserRole.assignee)
     assert client.get("/api/candidates").status_code == 403
