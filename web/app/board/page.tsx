@@ -32,6 +32,7 @@ function KanbanBoard() {
   const [filterPriority, setFilterPriority] = useState<Priority | "">("");
   const [filterType, setFilterType] = useState<CandidateType | "">("");
   const [showTerminal, setShowTerminal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -87,6 +88,88 @@ function KanbanBoard() {
   async function open(id: number) {
     try { setSelected(await apiGet<WorkItemDetail>(`/api/work-items/${id}`)); }
     catch (e) { setError(e instanceof ApiError ? e.message : "Failed to load work item."); }
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+
+  // Optimistically relocate a set of items to target columns in one render.
+  function applyMoves(moves: { id: number; to: WorkItemStatus }[]) {
+    setBoard((b) => {
+      if (!b) return b;
+      const cols = {} as Board["columns"];
+      for (const k of WORK_STATUSES) cols[k] = [...(b.columns[k] ?? [])];
+      for (const { id, to } of moves) {
+        for (const k of WORK_STATUSES) {
+          const idx = cols[k].findIndex((w) => w.id === id);
+          if (idx >= 0) {
+            const [item] = cols[k].splice(idx, 1);
+            cols[to].unshift({ ...item, status: to });
+            break;
+          }
+        }
+      }
+      return { columns: cols };
+    });
+  }
+
+  async function postStatuses(entries: [number, WorkItemStatus][]): Promise<number[]> {
+    const failed: number[] = [];
+    for (const [id, status] of entries) {
+      try { await apiPost(`/api/work-items/${id}/status`, { status }); }
+      catch { failed.push(id); }
+    }
+    return failed;
+  }
+
+  async function batchMove(to: WorkItemStatus) {
+    const prev = new Map<number, WorkItemStatus>();
+    for (const id of selectedIds) {
+      const item = findItem(board!, id);
+      if (item && item.status !== to) prev.set(id, item.status);
+    }
+    const ids = [...prev.keys()];
+    clearSelection();
+    if (ids.length === 0) return;
+    applyMoves(ids.map((id) => ({ id, to })));
+    const failed = await postStatuses(ids.map((id) => [id, to]));
+    if (failed.length === 0) {
+      toast({
+        kind: "success",
+        message: `Moved ${ids.length} item${ids.length === 1 ? "" : "s"} to ${STATUS_LABEL[to]}.`,
+        action: { label: "Undo", onClick: () => undoBatch(prev) },
+      });
+    } else {
+      load();
+      toast({
+        kind: "error",
+        message: `${failed.length} of ${ids.length} moves failed.`,
+        action: { label: "Retry", onClick: () => retryMoves(failed, to) },
+      });
+    }
+  }
+
+  async function retryMoves(ids: number[], to: WorkItemStatus) {
+    applyMoves(ids.map((id) => ({ id, to })));
+    const failed = await postStatuses(ids.map((id) => [id, to]));
+    load();
+    toast(failed.length === 0
+      ? { kind: "success", message: `Moved ${ids.length} item${ids.length === 1 ? "" : "s"} to ${STATUS_LABEL[to]}.` }
+      : { kind: "error", message: `${failed.length} still failed.`, action: { label: "Retry", onClick: () => retryMoves(failed, to) } });
+  }
+
+  async function undoBatch(prev: Map<number, WorkItemStatus>) {
+    const entries = [...prev] as [number, WorkItemStatus][];
+    applyMoves(entries.map(([id, status]) => ({ id, to: status })));
+    await postStatuses(entries);
+    load();
+    toast({ kind: "info", message: "Move undone." });
   }
 
   const chipStyle = (active: boolean): React.CSSProperties =>
@@ -200,7 +283,7 @@ function KanbanBoard() {
                     filtered.map((wi) => (
                       <article
                         key={wi.id}
-                        className="wi-card"
+                        className={`wi-card${selectedIds.has(wi.id) ? " selected" : ""}`}
                         draggable
                         tabIndex={0}
                         aria-label={`Open ${wi.title || "untitled"} (WI-${wi.id})`}
@@ -213,6 +296,14 @@ function KanbanBoard() {
                         }}
                         onDragStart={(e) => e.dataTransfer.setData("text/plain", String(wi.id))}
                       >
+                        <input
+                          type="checkbox"
+                          className="wi-select"
+                          checked={selectedIds.has(wi.id)}
+                          aria-label={`Select WI-${wi.id} for bulk actions`}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => toggleSelect(wi.id)}
+                        />
                         <div className="title">{wi.title || <span className="faint">untitled</span>}</div>
                         <div className="meta">
                           <TypeBadge type={wi.type} />
@@ -239,6 +330,27 @@ function KanbanBoard() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {selectedIds.size > 0 && (
+        <div className="batch-bar" role="region" aria-label="Bulk actions">
+          <span className="count">{selectedIds.size} selected</span>
+          <label className="batch-move">
+            <span className="faint">Move to</span>
+            <select
+              className="select"
+              value=""
+              aria-label="Move selected items to status"
+              onChange={(e) => { if (e.target.value) batchMove(e.target.value as WorkItemStatus); }}
+            >
+              <option value="">Choose status…</option>
+              {WORK_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+            </select>
+          </label>
+          <button className="btn sm ghost" onClick={clearSelection}>
+            <Icon name="close" size={11} aria-hidden /> Clear
+          </button>
         </div>
       )}
 

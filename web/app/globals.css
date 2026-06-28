@@ -305,6 +305,28 @@ table.tbl tr.clickable:focus-visible td { background: var(--accent-50); }
 .wi-card .meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
 .wi-card .id { color: var(--text-faint); font-size: 11px; font-family: var(--mono); }
 
+/* ---- board multi-select (Slice 5) ----------------------------------- */
+.wi-card { position: relative; }
+.wi-card .title { padding-right: 22px; }
+.wi-select {
+  position: absolute; top: 10px; right: 10px; width: 15px; height: 15px;
+  margin: 0; cursor: pointer; accent-color: var(--accent);
+}
+.wi-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--elev-2); }
+.batch-bar {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 50;
+  display: flex; align-items: center; gap: 14px;
+  background: var(--chrome); color: var(--on-chrome);
+  padding: 9px 10px 9px 16px; border-radius: var(--radius);
+  box-shadow: var(--elev-3); border: 1px solid var(--navy-border);
+}
+.batch-bar .count { font-weight: 650; font-size: 13px; white-space: nowrap; }
+.batch-bar .batch-move { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.batch-bar .batch-move .faint { color: var(--on-chrome-muted); }
+.batch-bar .select { width: auto; padding: 5px 10px; font-size: 13px; }
+.batch-bar .btn.ghost { color: var(--on-chrome-muted); }
+.batch-bar .btn.ghost:hover { background: var(--navy-hover); color: var(--on-chrome); }
+
 /* ---- drawer / panel -------------------------------------------------- */
 .overlay {
   position: fixed; inset: 0; background: rgba(7,24,42,.42);
