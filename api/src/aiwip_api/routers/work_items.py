@@ -10,7 +10,7 @@ from sqlalchemy import desc, false, select
 from sqlalchemy.orm import Session
 
 from aiwip_api import auth, enrich
-from aiwip_api.schemas import AssignLabelRequest, StatusChangeRequest, WorkItemOut
+from aiwip_api.schemas import AssignLabelRequest, StatusChangeRequest, UpdateWorkItemRequest, WorkItemOut
 from aiwip_core import audit
 from aiwip_core.models import (
     Assignee,
@@ -96,6 +96,39 @@ def get_work_item(work_item_id: int, user: User = Depends(auth.get_current_user)
         ],
         "labels": [{"id": label.id, "name": label.name} for label in labels],
     }
+
+
+def _editable_snapshot(wi: WorkItem) -> dict:
+    """Serialisable snapshot of the user-editable content fields, for the audit log."""
+    return {
+        "title": wi.title,
+        "summary": wi.summary,
+        "priority": wi.priority.value if wi.priority else None,
+        "due_date": wi.due_date.isoformat() if wi.due_date else None,
+    }
+
+
+@router.patch("/{work_item_id}", response_model=WorkItemOut)
+def edit_work_item(
+    work_item_id: int,
+    payload: UpdateWorkItemRequest,
+    admin: User = Depends(auth.require_admin),
+    db: Session = Depends(auth.get_db),
+) -> WorkItem:
+    wi = db.get(WorkItem, work_item_id)
+    if wi is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Work item not found")
+    before = _editable_snapshot(wi)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(wi, field, value)
+    db.flush()
+    audit.record_audit(
+        db, admin.id, AuditAction.work_item_edited, AuditEntityType.work_item, wi.id,
+        before=before, after=_editable_snapshot(wi),
+    )
+    db.commit()
+    db.refresh(wi)
+    return wi
 
 
 @router.post("/{work_item_id}/status", response_model=WorkItemOut)

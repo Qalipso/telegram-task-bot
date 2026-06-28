@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
-import { apiGet, apiPost, ApiError } from "../lib/api";
+import { apiGet, apiPost, apiPatch, ApiError } from "../lib/api";
 import { Drawer } from "../components/Drawer";
 import { useToast } from "../components/Toast";
 import {
@@ -374,9 +374,44 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
   const [catalog, setCatalog] = useState<Label[]>([]);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [eTitle, setETitle] = useState("");
+  const [eSummary, setESummary] = useState("");
+  const [ePriority, setEPriority] = useState<string>("");
+  const [eDue, setEDue] = useState("");
   const { toast } = useToast();
   const wi = detail.work_item;
   const titleId = `wi-${wi.id}-title`;
+
+  function startEdit() {
+    setETitle(wi.title ?? "");
+    setESummary(wi.summary ?? "");
+    setEPriority(wi.priority ?? "");
+    setEDue(wi.due_date ? wi.due_date.slice(0, 10) : "");
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    setBusy(true);
+    try {
+      await apiPatch(`/api/work-items/${wi.id}`, {
+        title: eTitle,
+        summary: eSummary || null,
+        priority: ePriority || null,
+        due_date: eDue ? `${eDue}T00:00:00Z` : null,
+      });
+      await refetch();
+      onBoardChanged();
+      setEditing(false);
+      toast({ kind: "success", message: "Work item updated." });
+    } catch (e) {
+      toast({
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Could not save changes.",
+        action: { label: "Retry", onClick: () => saveEdit() },
+      });
+    } finally { setBusy(false); }
+  }
 
   useEffect(() => {
     apiGet<Label[]>("/api/labels").then(setCatalog).catch((e) => {
@@ -456,11 +491,42 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
       <div className="dh">
         <StatusBadge status={wi.status} />
         <h2 id={titleId} style={{ flex: 1 }}>WI-{wi.id}</h2>
+        {!editing && (
+          <button className="btn ghost sm" onClick={startEdit}>
+            <Icon name="edit" size={13} aria-hidden /> Edit
+          </button>
+        )}
         <button className="btn ghost sm" onClick={onClose} aria-label="Close">
           <Icon name="close" size={14} aria-hidden />
         </button>
       </div>
       <div className="db">
+        {editing ? (
+          <div className="col" style={{ gap: 14 }}>
+            <label className="field">Title
+              <input className="input" value={eTitle} autoFocus onChange={(e) => setETitle(e.target.value)} />
+            </label>
+            <label className="field">Summary
+              <textarea className="textarea" value={eSummary} onChange={(e) => setESummary(e.target.value)} />
+            </label>
+            <div className="row" style={{ gap: 12 }}>
+              <label className="field" style={{ flex: 1 }}>Priority
+                <select className="select" value={ePriority} onChange={(e) => setEPriority(e.target.value)}>
+                  <option value="">none</option>
+                  {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+                </select>
+              </label>
+              <label className="field" style={{ flex: 1 }}>Due date
+                <input className="input" type="date" value={eDue} onChange={(e) => setEDue(e.target.value)} />
+              </label>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn primary" onClick={saveEdit} disabled={busy || !eTitle.trim()}>Save changes</button>
+              <button className="btn ghost" onClick={() => setEditing(false)} disabled={busy}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <>
         <h3>{wi.title || <span className="faint">untitled</span>}</h3>
         {wi.summary && <div className="muted">{wi.summary}</div>}
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
@@ -538,6 +604,8 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
           <span className="k">From candidate</span>
           <span className="mono">#{wi.source_candidate_id}</span>
         </div>
+          </>
+        )}
       </div>
     </Drawer>
   );

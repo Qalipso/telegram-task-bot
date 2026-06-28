@@ -75,5 +75,75 @@ def test_assignee_visibility_and_status(client, db):
     assert client.post(f"/api/work-items/{other.id}/status", json={"status": "done"}).status_code == 404
 
 
+def test_edit_work_item_and_audit(client, db):
+    _login_user(client, db, m.UserRole.admin, "admin@x.io")
+    wi = _work_item(db, title="old title")
+    r = client.patch(
+        f"/api/work-items/{wi.id}",
+        json={
+            "title": "new title",
+            "summary": "a summary",
+            "priority": "high",
+            "due_date": "2026-07-01T00:00:00Z",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["title"] == "new title"
+    assert body["summary"] == "a summary"
+    assert body["priority"] == "high"
+    db.refresh(wi)
+    assert wi.title == "new title" and wi.priority == m.Priority.high
+    aud = db.query(m.AuditLog).filter_by(action=m.AuditAction.work_item_edited).all()
+    assert len(aud) == 1
+    assert aud[0].before_value["title"] == "old title"
+    assert aud[0].after_value["title"] == "new title"
+
+
+def test_edit_work_item_partial_leaves_other_fields(client, db):
+    _login_user(client, db, m.UserRole.admin, "admin@x.io")
+    wi = _work_item(db, title="keep me")
+    r = client.patch(f"/api/work-items/{wi.id}", json={"summary": "only summary"})
+    assert r.status_code == 200
+    db.refresh(wi)
+    assert wi.title == "keep me"  # untouched
+    assert wi.summary == "only summary"
+
+
+def test_edit_work_item_clear_nullable_field(client, db):
+    _login_user(client, db, m.UserRole.admin, "admin@x.io")
+    wi = _work_item(db, title="t")
+    wi.priority = m.Priority.high
+    db.flush()
+    r = client.patch(f"/api/work-items/{wi.id}", json={"priority": None})
+    assert r.status_code == 200
+    db.refresh(wi)
+    assert wi.priority is None
+
+
+def test_edit_work_item_requires_admin(client, db):
+    user = _login_user(client, db, m.UserRole.assignee, "ass@x.io")
+    a = m.Assignee(user_id=user.id, display_name="A", telegram_username="a")
+    db.add(a)
+    db.flush()
+    mine = _work_item(db, title="mine")
+    db.add(m.WorkItemAssignee(work_item_id=mine.id, assignee_id=a.id, is_primary=True))
+    db.flush()
+    # Assignees may transition status (existing behaviour) but NOT edit content fields.
+    assert client.patch(f"/api/work-items/{mine.id}", json={"title": "x"}).status_code == 403
+
+
+def test_edit_work_item_404(client, db):
+    _login_user(client, db, m.UserRole.admin, "admin@x.io")
+    assert client.patch("/api/work-items/99999", json={"title": "x"}).status_code == 404
+
+
+def test_edit_work_item_rejects_overlong_title(client, db):
+    _login_user(client, db, m.UserRole.admin, "admin@x.io")
+    wi = _work_item(db, title="t")
+    r = client.patch(f"/api/work-items/{wi.id}", json={"title": "x" * 513})
+    assert r.status_code == 422  # clean validation error, not a 500 truncation
+
+
 def test_unauthenticated(client):
     assert client.get("/api/work-items").status_code == 401

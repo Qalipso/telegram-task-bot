@@ -178,6 +178,7 @@ class AuditAction(str, enum.Enum):
     candidate_approved = "candidate_approved"
     candidate_rejected = "candidate_rejected"
     work_item_status_changed = "work_item_status_changed"
+    work_item_edited = "work_item_edited"
     assignee_created = "assignee_created"
     assignee_updated = "assignee_updated"
 
