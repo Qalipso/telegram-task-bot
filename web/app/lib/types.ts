@@ -68,10 +68,16 @@ export interface Board {
   columns: Record<WorkItemStatus, WorkItem[]>;
 }
 
+export interface Label {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
 export interface WorkItemDetail {
   work_item: WorkItem;
   assignees: CandidateAssigneeRef[];
-  labels: { id: number; name: string }[];
+  labels: Label[];
 }
 
 export interface Assignee {

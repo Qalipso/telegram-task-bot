@@ -14,6 +14,7 @@ const PATHS: Record<string, React.ReactNode> = {
   chevron: <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>,
   user: <><circle cx="8" cy="5.5" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>,
   power: <><path d="M8 2v5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5 4.3A6 6 0 1 0 11 4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>,
+  tag: <><path d="M2 6.5V3a1 1 0 0 1 1-1h3.5a1 1 0 0 1 .7.3l6 6a1 1 0 0 1 0 1.4l-3.5 3.5a1 1 0 0 1-1.4 0l-6-6a1 1 0 0 1-.3-.7Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><circle cx="5" cy="5" r="1" fill="currentColor"/></>,
 };
 
 export function Icon({

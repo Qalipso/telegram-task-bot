@@ -2,11 +2,14 @@
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import { apiGet, apiPost, ApiError } from "../lib/api";
+import { Drawer } from "../components/Drawer";
 import {
   PriorityBadge, TypeBadge, StatusBadge, fmtDate, Icon,
   WORK_STATUSES, STATUS_LABEL, COLUMN_ACCENT, PRIORITY_LABEL,
 } from "../components/ui";
-import type { Board, WorkItem, WorkItemStatus, WorkItemDetail, Priority, CandidateType } from "../lib/types";
+import type { Board, WorkItem, WorkItemStatus, WorkItemDetail, Priority, CandidateType, Label } from "../lib/types";
+
+const LABEL_PALETTE = ["#4DA2FF", "#1f9d57", "#c4810b", "#7a52c4", "#d9534f", "#2a8bd7"];
 
 const TERMINAL: WorkItemStatus[] = ["inbox", "cancelled", "archived"];
 const PRIORITIES: Priority[] = ["critical", "high", "medium", "low"];
@@ -193,7 +196,15 @@ function KanbanBoard() {
                         key={wi.id}
                         className="wi-card"
                         draggable
+                        tabIndex={0}
+                        aria-label={`Open ${wi.title || "untitled"} (WI-${wi.id})`}
                         onClick={() => open(wi.id)}
+                        onKeyDown={(e) => {
+                          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                            e.preventDefault();
+                            open(wi.id);
+                          }
+                        }}
                         onDragStart={(e) => e.dataTransfer.setData("text/plain", String(wi.id))}
                       >
                         <div className="title">{wi.title || <span className="faint">untitled</span>}</div>
@@ -227,72 +238,169 @@ function KanbanBoard() {
 
       {selected && (
         <WorkItemDrawer
-          detail={selected}
+          key={selected.work_item.id}
+          initial={selected}
           onClose={() => setSelected(null)}
-          onChanged={(updated) => { setSelected(updated); load(); }}
+          onBoardChanged={load}
         />
       )}
     </div>
   );
 }
 
-function WorkItemDrawer({ detail, onClose, onChanged }: {
-  detail: WorkItemDetail; onClose: () => void; onChanged: (d: WorkItemDetail) => void;
+function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
+  initial: WorkItemDetail; onClose: () => void; onBoardChanged: () => void;
 }) {
-  const wi = detail.work_item;
+  const [detail, setDetail] = useState<WorkItemDetail>(initial);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<Label[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const wi = detail.work_item;
+  const titleId = `wi-${wi.id}-title`;
+
+  useEffect(() => {
+    apiGet<Label[]>("/api/labels").then(setCatalog).catch(() => {});
+  }, []);
+
+  async function refetch() {
+    setDetail(await apiGet<WorkItemDetail>(`/api/work-items/${wi.id}`));
+  }
 
   async function changeStatus(to: WorkItemStatus) {
     if (to === wi.status) return;
-    setBusy(true);
+    setBusy(true); setErr(null);
     try {
       await apiPost(`/api/work-items/${wi.id}/status`, { status: to });
-      onChanged({ ...detail, work_item: { ...wi, status: to } });
-    } catch { setBusy(false); }
+      setDetail({ ...detail, work_item: { ...wi, status: to } });
+      onBoardChanged();
+    } catch (e) { setErr(e instanceof ApiError ? e.message : "Status change failed."); }
+    finally { setBusy(false); }
   }
 
+  async function assignLabel(labelId: number) {
+    setBusy(true); setErr(null);
+    try {
+      await apiPost(`/api/work-items/${wi.id}/labels`, { label_id: labelId });
+      await refetch();
+      onBoardChanged();
+    } catch (e) { setErr(e instanceof ApiError ? e.message : "Could not add label."); }
+    finally { setBusy(false); }
+  }
+
+  async function createAndAssign() {
+    const name = newName.trim();
+    if (!name) return;
+    setBusy(true); setErr(null);
+    try {
+      const color = LABEL_PALETTE[catalog.length % LABEL_PALETTE.length];
+      const created = await apiPost<Label>("/api/labels", { name, color });
+      setCatalog((c) => [...c, created]);
+      await apiPost(`/api/work-items/${wi.id}/labels`, { label_id: created.id });
+      await refetch();
+      onBoardChanged();
+      setNewName(""); setAdding(false);
+    } catch (e) { setErr(e instanceof ApiError ? e.message : "Could not create label."); }
+    finally { setBusy(false); }
+  }
+
+  const colorOf = (id: number, fallback: string | null) =>
+    catalog.find((c) => c.id === id)?.color ?? fallback ?? "var(--accent)";
+  const assignedIds = new Set(detail.labels.map((l) => l.id));
+  const available = catalog.filter((c) => !assignedIds.has(c.id));
+
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="drawer" onClick={(e) => e.stopPropagation()}>
-        <div className="dh">
-          <StatusBadge status={wi.status} />
-          <h2 style={{ flex: 1 }}>WI-{wi.id}</h2>
-          <button className="btn ghost sm" onClick={onClose} aria-label="Close">
-            <Icon name="close" size={14} aria-hidden />
-          </button>
+    <Drawer titleId={titleId} onClose={onClose}>
+      <div className="dh">
+        <StatusBadge status={wi.status} />
+        <h2 id={titleId} style={{ flex: 1 }}>WI-{wi.id}</h2>
+        <button className="btn ghost sm" onClick={onClose} aria-label="Close">
+          <Icon name="close" size={14} aria-hidden />
+        </button>
+      </div>
+      <div className="db">
+        <h3>{wi.title || <span className="faint">untitled</span>}</h3>
+        {wi.summary && <div className="muted">{wi.summary}</div>}
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          <TypeBadge type={wi.type} />
+          <PriorityBadge priority={wi.priority} />
+          {wi.due_date && <span className="badge">due {fmtDate(wi.due_date)}</span>}
         </div>
-        <div className="db">
-          <h3>{wi.title || <span className="faint">untitled</span>}</h3>
-          {wi.summary && <div className="muted">{wi.summary}</div>}
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            <TypeBadge type={wi.type} />
-            <PriorityBadge priority={wi.priority} />
-            {wi.due_date && <span className="badge">due {fmtDate(wi.due_date)}</span>}
-          </div>
-          <div className="kv">
-            <span className="k">Status</span>
-            <span>
-              <select className="select" style={{ width: "auto" }} value={wi.status} disabled={busy}
-                onChange={(e) => changeStatus(e.target.value as WorkItemStatus)}>
-                {WORK_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-              </select>
+
+        {err && <div className="banner error" role="alert" style={{ margin: "10px 0" }}>{err}</div>}
+
+        <div className="kv">
+          <span className="k">Status</span>
+          <span>
+            <select className="select" style={{ width: "auto" }} value={wi.status} disabled={busy}
+              onChange={(e) => changeStatus(e.target.value as WorkItemStatus)}>
+              {WORK_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+            </select>
+          </span>
+
+          <span className="k">Assignees</span>
+          <span className="chip-row">
+            {detail.assignees.length === 0 && <span className="faint">unassigned</span>}
+            {detail.assignees.map((a) => (
+              <span key={a.assignee_id} className={`assignee-chip${a.is_primary ? " primary" : ""}`}>
+                <Icon name="user" size={11} aria-hidden />
+                {a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}
+                {a.is_primary && <span className="faint"> · primary</span>}
+              </span>
+            ))}
+          </span>
+
+          <span className="k"><Icon name="tag" size={12} aria-hidden /> Labels</span>
+          <span>
+            <span className="chip-row">
+              {detail.labels.length === 0 && <span className="faint">none</span>}
+              {detail.labels.map((l) => (
+                <span key={l.id} className="label-chip">
+                  <span className="label-dot" style={{ background: colorOf(l.id, l.color) }} />
+                  {l.name}
+                </span>
+              ))}
             </span>
-            <span className="k">Assignees</span>
-            <span>{detail.assignees.length
-              ? detail.assignees.map((a) =>
-                  `${a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}${a.is_primary ? " (primary)" : ""}`
-                ).join(", ")
-              : <span className="faint">unassigned</span>}</span>
-            <span className="k">Labels</span>
-            <span>{detail.labels.length
-              ? detail.labels.map((l) => l.name).join(", ")
-              : <span className="faint">none</span>}</span>
-            <span className="k">From candidate</span>
-            <span className="mono">#{wi.source_candidate_id}</span>
-          </div>
+            <span className="add-label-row">
+              {available.length > 0 && (
+                <select className="select" value="" disabled={busy}
+                  style={{ width: "auto", padding: "3px 8px", fontSize: 12 }}
+                  aria-label="Add an existing label"
+                  onChange={(e) => { if (e.target.value) assignLabel(Number(e.target.value)); }}>
+                  <option value="">+ Add label…</option>
+                  {available.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
+              {!adding ? (
+                <button className="btn sm ghost" onClick={() => setAdding(true)} disabled={busy}>
+                  <Icon name="plus" size={11} aria-hidden /> New label
+                </button>
+              ) : (
+                <>
+                  <input className="input" autoFocus value={newName}
+                    style={{ width: 130, padding: "4px 8px", fontSize: 12 }}
+                    placeholder="Label name" aria-label="New label name"
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); createAndAssign(); }
+                    }} />
+                  <button className="btn sm primary" onClick={createAndAssign} disabled={busy || !newName.trim()}>
+                    Create
+                  </button>
+                  <button className="btn sm ghost" onClick={() => { setAdding(false); setNewName(""); }} disabled={busy}>
+                    Cancel
+                  </button>
+                </>
+              )}
+            </span>
+          </span>
+
+          <span className="k">From candidate</span>
+          <span className="mono">#{wi.source_candidate_id}</span>
         </div>
       </div>
-    </div>
+    </Drawer>
   );
 }
 
