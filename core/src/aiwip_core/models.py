@@ -180,6 +180,7 @@ class AuditAction(str, enum.Enum):
     candidate_marked_duplicate = "candidate_marked_duplicate"
     work_item_status_changed = "work_item_status_changed"
     work_item_edited = "work_item_edited"
+    work_item_reassigned = "work_item_reassigned"
     assignee_created = "assignee_created"
     assignee_updated = "assignee_updated"
 

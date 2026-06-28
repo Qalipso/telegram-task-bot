@@ -12,6 +12,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from aiwip_api import auth, enrich
+from aiwip_api._assignees import validate_active_assignee_ids
 from aiwip_api.schemas import CandidateOut, UpdateCandidateRequest, WorkItemOut
 from aiwip_core import audit, promotion
 from aiwip_core.models import (
@@ -50,20 +51,7 @@ def _set_candidate_assignees(db: Session, candidate: Candidate, assignee_ids: li
     """Replace the candidate's responsible person(s) (first id = primary) and keep the
     'assignee' missing-field flag in sync. Validates that every id is an ACTIVE assignee
     (spec §6.1D): a stale/forged/inactive id is rejected with 422 before any mutation."""
-    if assignee_ids:
-        active_ids = set(
-            db.execute(
-                select(Assignee.id).where(
-                    Assignee.id.in_(assignee_ids), Assignee.is_active.is_(True)
-                )
-            ).scalars().all()
-        )
-        invalid = [aid for aid in assignee_ids if aid not in active_ids]
-        if invalid:
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                f"Unknown or inactive assignee id(s): {invalid}",
-            )
+    validate_active_assignee_ids(db, assignee_ids)
     db.query(CandidateAssignee).filter_by(candidate_id=candidate.id).delete()
     for i, aid in enumerate(assignee_ids):
         db.add(CandidateAssignee(candidate_id=candidate.id, assignee_id=aid, is_primary=(i == 0)))

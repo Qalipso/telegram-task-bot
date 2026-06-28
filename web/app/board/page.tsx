@@ -1,14 +1,14 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
-import { apiGet, apiPost, apiPatch, ApiError } from "../lib/api";
+import { apiGet, apiPost, apiPatch, apiPut, ApiError } from "../lib/api";
 import { Drawer } from "../components/Drawer";
 import { useToast } from "../components/Toast";
 import {
   PriorityBadge, TypeBadge, StatusBadge, fmtDate, Icon,
   WORK_STATUSES, STATUS_LABEL, COLUMN_ACCENT, PRIORITY_LABEL,
 } from "../components/ui";
-import type { Board, WorkItem, WorkItemStatus, WorkItemDetail, Priority, CandidateType, Label } from "../lib/types";
+import type { Board, WorkItem, WorkItemStatus, WorkItemDetail, Priority, CandidateType, Label, Assignee } from "../lib/types";
 
 const LABEL_PALETTE = ["#4DA2FF", "#1f9d57", "#c4810b", "#7a52c4", "#d9534f", "#2a8bd7"];
 
@@ -379,9 +379,49 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
   const [eSummary, setESummary] = useState("");
   const [ePriority, setEPriority] = useState<string>("");
   const [eDue, setEDue] = useState("");
+  const [assigneeCatalog, setAssigneeCatalog] = useState<Assignee[]>([]);
+  const [editingAssignees, setEditingAssignees] = useState(false);
+  const [draftIds, setDraftIds] = useState<number[]>([]);
   const { toast } = useToast();
   const wi = detail.work_item;
   const titleId = `wi-${wi.id}-title`;
+
+  function startEditAssignees() {
+    setDraftIds(detail.assignees.map((a) => a.assignee_id));
+    setEditingAssignees(true);
+    if (assigneeCatalog.length === 0) {
+      apiGet<Assignee[]>("/api/assignees?active=true").then(setAssigneeCatalog).catch((e) => {
+        if (!(e instanceof ApiError && e.status === 403)) {
+          toast({ kind: "error", message: "Couldn't load the assignee list." });
+        }
+      });
+    }
+  }
+
+  function draftName(id: number): string {
+    const c = assigneeCatalog.find((x) => x.id === id);
+    if (c) return c.display_name || (c.telegram_username ? "@" + c.telegram_username : `#${id}`);
+    const d = detail.assignees.find((x) => x.assignee_id === id);
+    if (d) return d.display_name || (d.telegram_username ? "@" + d.telegram_username : `#${id}`);
+    return `#${id}`;
+  }
+
+  async function saveAssignees() {
+    setBusy(true);
+    try {
+      await apiPut(`/api/work-items/${wi.id}/assignees`, { assignee_ids: draftIds });
+      await refetch();
+      onBoardChanged();
+      setEditingAssignees(false);
+      toast({ kind: "success", message: "Assignees updated." });
+    } catch (e) {
+      toast({
+        kind: "error",
+        message: e instanceof ApiError ? e.message : "Could not update assignees.",
+        action: { label: "Retry", onClick: () => saveAssignees() },
+      });
+    } finally { setBusy(false); }
+  }
 
   function startEdit() {
     setETitle(wi.title ?? "");
@@ -545,15 +585,61 @@ function WorkItemDrawer({ initial, onClose, onBoardChanged }: {
           </span>
 
           <span className="k">Assignees</span>
-          <span className="chip-row">
-            {detail.assignees.length === 0 && <span className="faint">unassigned</span>}
-            {detail.assignees.map((a) => (
-              <span key={a.assignee_id} className={`assignee-chip${a.is_primary ? " primary" : ""}`}>
-                <Icon name="user" size={11} aria-hidden />
-                {a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}
-                {a.is_primary && <span className="faint"> · primary</span>}
+          <span>
+            {!editingAssignees ? (
+              <span className="chip-row">
+                {detail.assignees.length === 0 && <span className="faint">unassigned</span>}
+                {detail.assignees.map((a) => (
+                  <span key={a.assignee_id} className={`assignee-chip${a.is_primary ? " primary" : ""}`}>
+                    <Icon name="user" size={11} aria-hidden />
+                    {a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}
+                    {a.is_primary && <span className="faint"> · primary</span>}
+                  </span>
+                ))}
+                <button className="btn sm ghost" onClick={startEditAssignees} aria-label="Edit assignees">
+                  <Icon name="edit" size={11} aria-hidden /> Edit
+                </button>
               </span>
-            ))}
+            ) : (
+              <span className="col" style={{ gap: 8, alignItems: "flex-start" }}>
+                <span className="chip-row">
+                  {draftIds.length === 0 && <span className="faint">unassigned</span>}
+                  {draftIds.map((id, i) => (
+                    <span key={id} className={`assignee-chip${i === 0 ? " primary" : ""}`}>
+                      <Icon name="user" size={11} aria-hidden />
+                      {draftName(id)}
+                      {i === 0 && <span className="faint"> · primary</span>}
+                      <button
+                        className="chip-x"
+                        aria-label={`Remove ${draftName(id)}`}
+                        onClick={() => setDraftIds((ids) => ids.filter((x) => x !== id))}
+                      >
+                        <Icon name="close" size={9} aria-hidden />
+                      </button>
+                    </span>
+                  ))}
+                </span>
+                <span className="add-label-row">
+                  {assigneeCatalog.filter((c) => !draftIds.includes(c.id)).length > 0 && (
+                    <select
+                      className="select" value="" disabled={busy}
+                      style={{ width: "auto", padding: "3px 8px", fontSize: 12 }}
+                      aria-label="Add an assignee"
+                      onChange={(e) => { if (e.target.value) setDraftIds((ids) => [...ids, Number(e.target.value)]); }}
+                    >
+                      <option value="">+ Add assignee…</option>
+                      {assigneeCatalog.filter((c) => !draftIds.includes(c.id)).map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.display_name || (c.telegram_username ? "@" + c.telegram_username : `#${c.id}`)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button className="btn sm primary" onClick={saveAssignees} disabled={busy}>Save</button>
+                  <button className="btn sm ghost" onClick={() => setEditingAssignees(false)} disabled={busy}>Cancel</button>
+                </span>
+              </span>
+            )}
           </span>
 
           <span className="k"><Icon name="tag" size={12} aria-hidden /> Labels</span>

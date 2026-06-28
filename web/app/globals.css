@@ -365,6 +365,12 @@ table.tbl tr.clickable:focus-visible td { background: var(--accent-50); }
   background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border);
 }
 .assignee-chip.primary { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--accent-100); }
+.chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; background: transparent; cursor: pointer; padding: 0;
+  margin-left: 2px; color: var(--text-faint); border-radius: 4px;
+}
+.chip-x:hover { background: var(--danger-soft); color: var(--danger-ink); }
 .add-label-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 
 /* ---- toasts (Slice 4) ------------------------------------------------ */

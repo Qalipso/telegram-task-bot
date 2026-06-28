@@ -164,6 +164,12 @@ class UpdateWorkItemRequest(BaseModel):
     due_date: dt.datetime | None = None
 
 
+class ReassignWorkItemRequest(BaseModel):
+    """Replace a work item's assignee set (admin-only). First id = primary (D25).
+    An empty list clears all assignees."""
+    assignee_ids: list[int] = Field(default_factory=list)
+
+
 class CreateLabelRequest(BaseModel):
     name: str
     color: str | None = None
