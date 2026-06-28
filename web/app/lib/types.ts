@@ -59,6 +59,9 @@ export interface WorkItem {
   due_date: string | null;
   status: WorkItemStatus;
   source_candidate_id: number;
+  assignees?: string[];
+  source_chat_id?: number | null;
+  source_chat_title?: string | null;
 }
 
 export interface Board {

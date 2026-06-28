@@ -2,8 +2,15 @@
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import { apiGet, apiPost, ApiError } from "../lib/api";
-import { PriorityBadge, TypeBadge, StatusBadge, fmtDate, WORK_STATUSES, STATUS_LABEL, COLUMN_ACCENT } from "../components/ui";
-import type { Board, WorkItem, WorkItemStatus, WorkItemDetail } from "../lib/types";
+import {
+  PriorityBadge, TypeBadge, StatusBadge, fmtDate, Icon,
+  WORK_STATUSES, STATUS_LABEL, COLUMN_ACCENT, PRIORITY_LABEL,
+} from "../components/ui";
+import type { Board, WorkItem, WorkItemStatus, WorkItemDetail, Priority, CandidateType } from "../lib/types";
+
+const TERMINAL: WorkItemStatus[] = ["inbox", "cancelled", "archived"];
+const PRIORITIES: Priority[] = ["critical", "high", "medium", "low"];
+const TYPES: CandidateType[] = ["task", "request", "reminder", "idea", "knowledge"];
 
 export default function BoardPage() {
   return <AppShell><KanbanBoard /></AppShell>;
@@ -16,6 +23,11 @@ function KanbanBoard() {
   const [dragOver, setDragOver] = useState<WorkItemStatus | null>(null);
   const [selected, setSelected] = useState<WorkItemDetail | null>(null);
 
+  const [search, setSearch] = useState("");
+  const [filterPriority, setFilterPriority] = useState<Priority | "">("");
+  const [filterType, setFilterType] = useState<CandidateType | "">("");
+  const [showTerminal, setShowTerminal] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try { setBoard(await apiGet<Board>("/api/work-items/board")); }
@@ -25,9 +37,29 @@ function KanbanBoard() {
 
   useEffect(() => { load(); }, [load]);
 
+  function matchItem(wi: WorkItem): boolean {
+    if (search && !(wi.title ?? "").toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterPriority && wi.priority !== filterPriority) return false;
+    if (filterType && wi.type !== filterType) return false;
+    return true;
+  }
+
+  function clearFilters() { setSearch(""); setFilterPriority(""); setFilterType(""); }
+
+  const hasFilter = !!(search || filterPriority || filterType);
+  const total = board ? Object.values(board.columns).reduce((n, c) => n + c.length, 0) : 0;
+  const matchTotal = board
+    ? Object.values(board.columns).reduce((n, c) => n + c.filter(matchItem).length, 0)
+    : 0;
+
+  const visibleStatuses = WORK_STATUSES.filter((st) => {
+    if (!TERMINAL.includes(st)) return true;
+    const col = board?.columns[st] ?? [];
+    return showTerminal || col.length > 0;
+  });
+
   async function move(item: WorkItem, to: WorkItemStatus) {
     if (item.status === to) return;
-    // optimistic update
     setBoard((b) => {
       if (!b) return b;
       const cols: Board["columns"] = { ...b.columns };
@@ -48,17 +80,69 @@ function KanbanBoard() {
     catch (e) { setError(e instanceof ApiError ? e.message : "Failed to load work item."); }
   }
 
-  const total = board ? Object.values(board.columns).reduce((n, c) => n + c.length, 0) : 0;
+  const chipStyle = (active: boolean): React.CSSProperties =>
+    active ? { background: "var(--accent-soft)", color: "var(--accent-ink)", borderColor: "var(--accent-200)" } : {};
 
   return (
     <div className="container" style={{ maxWidth: 1400 }}>
       <div className="page-head">
         <h1>Board</h1>
-        <span className="sub">{total} work item{total === 1 ? "" : "s"} · drag a card between columns or use its status menu.</span>
-        <button className="btn sm right" onClick={load}>↻ Refresh</button>
+        <span className="sub">
+          {hasFilter ? `${matchTotal} of ${total}` : total} work item{total === 1 ? "" : "s"}
+          {!hasFilter && " · drag a card or use its status menu"}
+        </span>
+        <button className="btn sm right" onClick={load}>
+          <Icon name="refresh" size={13} aria-hidden /> Refresh
+        </button>
       </div>
 
-      {error && <div className="banner error" style={{ margin: "12px 0" }}>{error}</div>}
+      {error && <div className="banner error" role="alert" style={{ margin: "12px 0" }}>{error}</div>}
+
+      {!loading && total > 0 && (
+        <div className="toolbar">
+          <input
+            className="input"
+            style={{ width: 200, padding: "5px 10px", fontSize: 13 }}
+            placeholder="Search items…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search work items"
+          />
+          {PRIORITIES.map((p) => (
+            <button
+              key={p}
+              className="btn sm"
+              style={chipStyle(filterPriority === p)}
+              onClick={() => setFilterPriority(filterPriority === p ? "" : p)}
+              aria-pressed={filterPriority === p}
+            >
+              {PRIORITY_LABEL[p]}
+            </button>
+          ))}
+          <select
+            className="select"
+            style={{ width: "auto", padding: "5px 10px", fontSize: 13 }}
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value as CandidateType | "")}
+            aria-label="Filter by type"
+          >
+            <option value="">All types</option>
+            {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          {hasFilter && (
+            <button className="btn sm ghost" onClick={clearFilters}>
+              <Icon name="close" size={11} aria-hidden /> Clear
+            </button>
+          )}
+          <button
+            className="btn sm ghost right"
+            onClick={() => setShowTerminal((s) => !s)}
+            aria-pressed={showTerminal}
+          >
+            {showTerminal ? "Hide empty cols" : "Show all cols"}
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="loading-wrap"><span className="spinner" /> Loading board…</div>
@@ -70,8 +154,9 @@ function KanbanBoard() {
         </div>
       ) : (
         <div className="board">
-          {WORK_STATUSES.map((st) => {
+          {visibleStatuses.map((st) => {
             const col = board!.columns[st] ?? [];
+            const filtered = col.filter(matchItem);
             return (
               <div
                 key={st}
@@ -88,38 +173,51 @@ function KanbanBoard() {
               >
                 <div className="col-head" style={{ borderBottom: `2px solid ${COLUMN_ACCENT[st]}` }}>
                   {STATUS_LABEL[st]}
-                  <span className="count">{col.length}</span>
+                  <span
+                    className="count"
+                    title={hasFilter && filtered.length !== col.length ? `${filtered.length} of ${col.length}` : undefined}
+                  >
+                    {hasFilter && filtered.length !== col.length
+                      ? `${filtered.length}/${col.length}`
+                      : col.length}
+                  </span>
                 </div>
                 <div className="col-body">
-                  {col.map((wi) => (
-                    <article
-                      key={wi.id}
-                      className="wi-card"
-                      draggable
-                      onClick={() => open(wi.id)}
-                      onDragStart={(e) => e.dataTransfer.setData("text/plain", String(wi.id))}
-                    >
-                      <div className="title">{wi.title || <span className="faint">untitled</span>}</div>
-                      <div className="meta">
-                        <TypeBadge type={wi.type} />
-                        <PriorityBadge priority={wi.priority} />
-                        {wi.due_date && <span className="badge">due {fmtDate(wi.due_date)}</span>}
-                      </div>
-                      <div className="row" style={{ marginTop: 9, gap: 6 }}>
-                        <span className="id">WI-{wi.id}</span>
-                        <select
-                          className="select"
-                          style={{ width: "auto", padding: "3px 6px", fontSize: 12, marginLeft: "auto" }}
-                          value={wi.status}
-                          aria-label={`Status for work item ${wi.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => move(wi, e.target.value as WorkItemStatus)}
-                        >
-                          {WORK_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-                        </select>
-                      </div>
-                    </article>
-                  ))}
+                  {filtered.length === 0 && col.length > 0 ? (
+                    <span className="faint" style={{ fontSize: 12, padding: "8px 2px", display: "block" }}>
+                      No matches
+                    </span>
+                  ) : (
+                    filtered.map((wi) => (
+                      <article
+                        key={wi.id}
+                        className="wi-card"
+                        draggable
+                        onClick={() => open(wi.id)}
+                        onDragStart={(e) => e.dataTransfer.setData("text/plain", String(wi.id))}
+                      >
+                        <div className="title">{wi.title || <span className="faint">untitled</span>}</div>
+                        <div className="meta">
+                          <TypeBadge type={wi.type} />
+                          <PriorityBadge priority={wi.priority} />
+                          {wi.due_date && <span className="badge">due {fmtDate(wi.due_date)}</span>}
+                        </div>
+                        <div className="row" style={{ marginTop: 9, gap: 6 }}>
+                          <span className="id">WI-{wi.id}</span>
+                          <select
+                            className="select"
+                            style={{ width: "auto", padding: "3px 6px", fontSize: 12, marginLeft: "auto" }}
+                            value={wi.status}
+                            aria-label={`Status for WI-${wi.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => move(wi, e.target.value as WorkItemStatus)}
+                          >
+                            {WORK_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                          </select>
+                        </div>
+                      </article>
+                    ))
+                  )}
                 </div>
               </div>
             );
@@ -159,7 +257,9 @@ function WorkItemDrawer({ detail, onClose, onChanged }: {
         <div className="dh">
           <StatusBadge status={wi.status} />
           <h2 style={{ flex: 1 }}>WI-{wi.id}</h2>
-          <button className="btn ghost sm" onClick={onClose}>✕</button>
+          <button className="btn ghost sm" onClick={onClose} aria-label="Close">
+            <Icon name="close" size={14} aria-hidden />
+          </button>
         </div>
         <div className="db">
           <h3>{wi.title || <span className="faint">untitled</span>}</h3>
@@ -179,11 +279,16 @@ function WorkItemDrawer({ detail, onClose, onChanged }: {
             </span>
             <span className="k">Assignees</span>
             <span>{detail.assignees.length
-              ? detail.assignees.map((a) => `${a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}${a.is_primary ? " (primary)" : ""}`).join(", ")
+              ? detail.assignees.map((a) =>
+                  `${a.display_name || (a.telegram_username ? "@" + a.telegram_username : `#${a.assignee_id}`)}${a.is_primary ? " (primary)" : ""}`
+                ).join(", ")
               : <span className="faint">unassigned</span>}</span>
             <span className="k">Labels</span>
-            <span>{detail.labels.length ? detail.labels.map((l) => l.name).join(", ") : <span className="faint">none</span>}</span>
-            <span className="k">From candidate</span><span className="mono">#{wi.source_candidate_id}</span>
+            <span>{detail.labels.length
+              ? detail.labels.map((l) => l.name).join(", ")
+              : <span className="faint">none</span>}</span>
+            <span className="k">From candidate</span>
+            <span className="mono">#{wi.source_candidate_id}</span>
           </div>
         </div>
       </div>
