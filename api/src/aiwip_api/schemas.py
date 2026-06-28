@@ -155,6 +155,21 @@ class StatusChangeRequest(BaseModel):
     status: WorkItemStatus
 
 
+class UpdateWorkItemRequest(BaseModel):
+    """Partial edit of a work item's content fields (admin-only). Omitted fields
+    are left unchanged; explicit null clears a nullable field."""
+    title: str | None = Field(default=None, max_length=512)  # matches WorkItem.title column
+    summary: str | None = None
+    priority: Priority | None = None
+    due_date: dt.datetime | None = None
+
+
+class ReassignWorkItemRequest(BaseModel):
+    """Replace a work item's assignee set (admin-only). First id = primary (D25).
+    An empty list clears all assignees."""
+    assignee_ids: list[int] = Field(default_factory=list)
+
+
 class CreateLabelRequest(BaseModel):
     name: str
     color: str | None = None
