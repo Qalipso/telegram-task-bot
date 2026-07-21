@@ -59,16 +59,25 @@ export interface WorkItem {
   due_date: string | null;
   status: WorkItemStatus;
   source_candidate_id: number;
+  assignees?: string[];
+  source_chat_id?: number | null;
+  source_chat_title?: string | null;
 }
 
 export interface Board {
   columns: Record<WorkItemStatus, WorkItem[]>;
 }
 
+export interface Label {
+  id: number;
+  name: string;
+  color: string | null;
+}
+
 export interface WorkItemDetail {
   work_item: WorkItem;
   assignees: CandidateAssigneeRef[];
-  labels: { id: number; name: string }[];
+  labels: Label[];
 }
 
 export interface Assignee {

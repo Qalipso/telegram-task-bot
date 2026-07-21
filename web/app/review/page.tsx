@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "../components/AppShell";
 import { apiGet, apiPatch, apiPost, ApiError } from "../lib/api";
+import { useToast } from "../components/Toast";
 import {
   PriorityBadge, TypeBadge, StatusBadge, ConfidenceBar, MissingFields,
   fmtDate, fmtDateTime, CANDIDATE_STATUSES, STATUS_LABEL, PRIORITY_LABEL,
@@ -135,12 +136,19 @@ function CandidateDrawer({ detail, assignees, onClose, onChanged }: {
     (detail.assignees.find((a) => a.is_primary) ?? detail.assignees[0])?.assignee_id?.toString() ?? "",
   );
   const [busy, setBusy] = useState(false);
-  const [banner, setBanner] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const { toast } = useToast();
 
-  async function run(fn: () => Promise<void>) {
-    setBusy(true); setBanner(null);
+  async function run(fn: () => Promise<void>, label: string) {
+    setBusy(true);
     try { await fn(); }
-    catch (e) { setBanner({ kind: "error", text: e instanceof ApiError ? e.message : "Request failed." }); setBusy(false); }
+    catch (e) {
+      toast({
+        kind: "error",
+        message: e instanceof ApiError ? e.message : `${label} failed.`,
+        action: { label: "Retry", onClick: () => run(fn, label) },
+      });
+    }
+    finally { setBusy(false); }
   }
 
   const save = () => run(async () => {
@@ -150,16 +158,27 @@ function CandidateDrawer({ detail, assignees, onClose, onChanged }: {
       due_date: due ? `${due}T00:00:00Z` : null,
       assignee_ids: assigneeId ? [Number(assigneeId)] : [],
     });
+    toast({ kind: "success", message: "Candidate saved." });
     onChanged();
-  });
+  }, "Save");
 
   const approve = () => run(async () => {
     const wi = await apiPost<{ id: number }>(`/api/candidates/${c.id}/approve`);
-    setBanner({ kind: "ok", text: `Approved → Work Item #${wi.id} created.` });
-    setTimeout(onChanged, 700);
-  });
+    toast({ kind: "success", message: `Approved → Work Item #${wi.id} created.` });
+    onChanged();
+  }, "Approve");
 
-  const reject = () => run(async () => { await apiPost(`/api/candidates/${c.id}/reject`); onChanged(); });
+  const reject = () => run(async () => {
+    await apiPost(`/api/candidates/${c.id}/reject`);
+    toast({ kind: "info", message: "Candidate rejected." });
+    onChanged();
+  }, "Reject");
+
+  const markDuplicate = () => run(async () => {
+    await apiPost(`/api/candidates/${c.id}/duplicate`);
+    toast({ kind: "info", message: "Marked as duplicate." });
+    onChanged();
+  }, "Mark duplicate");
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -170,7 +189,6 @@ function CandidateDrawer({ detail, assignees, onClose, onChanged }: {
           <button className="btn ghost sm" onClick={onClose}>✕</button>
         </div>
         <div className="db">
-          {banner && <div className={`banner ${banner.kind}`}>{banner.text}</div>}
           {locked && <div className="banner ok" style={{ background: "var(--surface-2)", color: "var(--text-muted)", borderColor: "var(--border)" }}>
             This candidate is {c.status} and can no longer be edited.
           </div>}
@@ -238,7 +256,8 @@ function CandidateDrawer({ detail, assignees, onClose, onChanged }: {
             <div className="row" style={{ gap: 8, paddingTop: 4 }}>
               <button className="btn" onClick={save} disabled={busy}>Save edits</button>
               <button className="btn success" onClick={approve} disabled={busy}>✓ Approve → Work Item</button>
-              <button className="btn danger-outline right" onClick={reject} disabled={busy}>Reject</button>
+              <button className="btn ghost right" onClick={markDuplicate} disabled={busy}>Mark duplicate</button>
+              <button className="btn danger-outline" onClick={reject} disabled={busy}>Reject</button>
             </div>
           )}
         </div>

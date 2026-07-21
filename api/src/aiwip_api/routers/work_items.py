@@ -10,7 +10,14 @@ from sqlalchemy import desc, false, select
 from sqlalchemy.orm import Session
 
 from aiwip_api import auth, enrich
-from aiwip_api.schemas import AssignLabelRequest, StatusChangeRequest, WorkItemOut
+from aiwip_api._assignees import validate_active_assignee_ids
+from aiwip_api.schemas import (
+    AssignLabelRequest,
+    ReassignWorkItemRequest,
+    StatusChangeRequest,
+    UpdateWorkItemRequest,
+    WorkItemOut,
+)
 from aiwip_core import audit
 from aiwip_core.models import (
     Assignee,
@@ -98,6 +105,39 @@ def get_work_item(work_item_id: int, user: User = Depends(auth.get_current_user)
     }
 
 
+def _editable_snapshot(wi: WorkItem) -> dict:
+    """Serialisable snapshot of the user-editable content fields, for the audit log."""
+    return {
+        "title": wi.title,
+        "summary": wi.summary,
+        "priority": wi.priority.value if wi.priority else None,
+        "due_date": wi.due_date.isoformat() if wi.due_date else None,
+    }
+
+
+@router.patch("/{work_item_id}", response_model=WorkItemOut)
+def edit_work_item(
+    work_item_id: int,
+    payload: UpdateWorkItemRequest,
+    admin: User = Depends(auth.require_admin),
+    db: Session = Depends(auth.get_db),
+) -> WorkItem:
+    wi = db.get(WorkItem, work_item_id)
+    if wi is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Work item not found")
+    before = _editable_snapshot(wi)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(wi, field, value)
+    db.flush()
+    audit.record_audit(
+        db, admin.id, AuditAction.work_item_edited, AuditEntityType.work_item, wi.id,
+        before=before, after=_editable_snapshot(wi),
+    )
+    db.commit()
+    db.refresh(wi)
+    return wi
+
+
 @router.post("/{work_item_id}/status", response_model=WorkItemOut)
 def change_status(
     work_item_id: int,
@@ -137,5 +177,44 @@ def assign_label(
     if exists is None:
         db.add(WorkItemLabel(work_item_id=work_item_id, label_id=payload.label_id))
         db.commit()
+    db.refresh(wi)
+    return wi
+
+
+def _assignee_ids_snapshot(db: Session, wi: WorkItem) -> list[int]:
+    """Current assignee ids for the work item, primary first — for the audit before/after."""
+    rows = db.execute(
+        select(WorkItemAssignee.assignee_id, WorkItemAssignee.is_primary).where(
+            WorkItemAssignee.work_item_id == wi.id
+        )
+    ).all()
+    return [aid for aid, _ in sorted(rows, key=lambda r: (not r[1], r[0]))]
+
+
+def _set_work_item_assignees(db: Session, wi: WorkItem, assignee_ids: list[int]) -> None:
+    validate_active_assignee_ids(db, assignee_ids)  # 422 before any mutation
+    db.query(WorkItemAssignee).filter_by(work_item_id=wi.id).delete()
+    for i, aid in enumerate(assignee_ids):
+        db.add(WorkItemAssignee(work_item_id=wi.id, assignee_id=aid, is_primary=(i == 0)))
+
+
+@router.put("/{work_item_id}/assignees", response_model=WorkItemOut)
+def reassign_work_item(
+    work_item_id: int,
+    payload: ReassignWorkItemRequest,
+    admin: User = Depends(auth.require_admin),
+    db: Session = Depends(auth.get_db),
+) -> WorkItem:
+    wi = db.get(WorkItem, work_item_id)
+    if wi is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Work item not found")
+    before = _assignee_ids_snapshot(db, wi)
+    _set_work_item_assignees(db, wi, payload.assignee_ids)
+    db.flush()
+    audit.record_audit(
+        db, admin.id, AuditAction.work_item_reassigned, AuditEntityType.work_item, wi.id,
+        before={"assignee_ids": before}, after={"assignee_ids": payload.assignee_ids},
+    )
+    db.commit()
     db.refresh(wi)
     return wi

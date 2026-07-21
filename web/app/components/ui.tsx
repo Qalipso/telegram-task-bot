@@ -2,6 +2,48 @@
    status constants, and formatting. Pure components — no hooks. */
 import type { Priority, WorkItemStatus, CandidateType, CandidateStatus } from "../lib/types";
 
+/* ---- Icon primitive -------------------------------------------------- */
+const PATHS: Record<string, React.ReactNode> = {
+  logo: <><circle cx="9" cy="9" r="8" stroke="currentColor" strokeWidth="1.5"/><circle cx="9" cy="9" r="3.5" fill="currentColor"/></>,
+  close: <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>,
+  refresh: <><path d="M13.5 2.5A7 7 0 1 0 15 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M13.5 2.5V6.5H9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></>,
+  plus: <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>,
+  check: <path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>,
+  search: <><circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5"/><path d="M13 13l-3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>,
+  arrow: <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>,
+  chevron: <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>,
+  user: <><circle cx="8" cy="5.5" r="3" stroke="currentColor" strokeWidth="1.5"/><path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>,
+  power: <><path d="M8 2v5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M5 4.3A6 6 0 1 0 11 4.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></>,
+  tag: <><path d="M2 6.5V3a1 1 0 0 1 1-1h3.5a1 1 0 0 1 .7.3l6 6a1 1 0 0 1 0 1.4l-3.5 3.5a1 1 0 0 1-1.4 0l-6-6a1 1 0 0 1-.3-.7Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><circle cx="5" cy="5" r="1" fill="currentColor"/></>,
+  edit: <path d="M11.6 2.4a1.4 1.4 0 0 1 2 2L5 13l-3 .9.9-3 8.7-8.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>,
+};
+
+export function Icon({
+  name,
+  size = 16,
+  className,
+  "aria-label": label,
+  "aria-hidden": hidden,
+}: {
+  name: keyof typeof PATHS;
+  size?: number;
+  className?: string;
+  "aria-label"?: string;
+  "aria-hidden"?: boolean | "true" | "false";
+}) {
+  return (
+    <svg
+      width={size} height={size}
+      viewBox="0 0 16 16" fill="none"
+      className={className}
+      aria-label={label}
+      aria-hidden={hidden ?? (label ? undefined : true)}
+    >
+      {PATHS[name]}
+    </svg>
+  );
+}
+
 export const WORK_STATUSES: WorkItemStatus[] = [
   "inbox", "backlog", "ready", "in_progress", "blocked", "review", "done", "cancelled", "archived",
 ];
