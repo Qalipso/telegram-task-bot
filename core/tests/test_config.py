@@ -1,4 +1,7 @@
 """Stage 1 — settings load + override."""
+import pytest
+from pydantic import ValidationError
+
 from aiwip_core.config import Settings
 
 
@@ -19,3 +22,20 @@ def test_env_override(monkeypatch):
     s = Settings()
     assert s.log_level == "DEBUG"
     assert s.worker_heartbeat_seconds == 5
+
+
+def test_insecure_secret_key_default_allowed_in_local(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    s = Settings(_env_file=None, app_env="local")
+    assert s.secret_key == "dev-insecure-change-me"
+
+
+def test_insecure_secret_key_default_rejected_outside_local(monkeypatch):
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    with pytest.raises(ValidationError, match="SECRET_KEY"):
+        Settings(_env_file=None, app_env="production")
+
+
+def test_real_secret_key_allowed_outside_local(monkeypatch):
+    s = Settings(_env_file=None, app_env="production", secret_key="a-real-random-secret")
+    assert s.secret_key == "a-real-random-secret"
