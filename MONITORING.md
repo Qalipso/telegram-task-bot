@@ -50,6 +50,36 @@ View health status:
 docker compose ps
 ```
 
+## Observability endpoints (API)
+
+| Endpoint | Purpose | Degraded behaviour |
+|---|---|---|
+| `GET /health` | API liveness, touches nothing | — |
+| `GET /health/ready` | Postgres + Redis readiness | 503 with per-check detail |
+| `GET /health/worker` | Worker liveness via its Redis heartbeat | 503 when heartbeat missing or older than `WORKER_HEARTBEAT_MAX_AGE_SECONDS` (default 90s) |
+| `GET /metrics` | Prometheus exposition | gauges report `-1` when Redis is unreachable |
+
+`/metrics` series: `aiwip_http_requests_total{method,path,status}`,
+`aiwip_http_request_duration_seconds`, `aiwip_worker_heartbeat_age_seconds`,
+`aiwip_queue_depth`.
+
+### External uptime monitoring
+
+The API binds to loopback on the VPS, so expose the two health URLs through your
+tunnel/proxy of choice and point an uptime monitor (UptimeRobot, healthchecks.io)
+at both — each with its public status page:
+
+- `…/health/ready` — API + Postgres + Redis alive
+- `…/health/worker` — answers "did the worker die overnight?" without SSH
+
+### Structured logs
+
+Set `LOG_FORMAT=json` (docker-compose.yml already does for api/worker/bot) to get
+one JSON object per line — parseable by `jq`, Loki, or CloudWatch:
+```bash
+docker compose logs --no-log-prefix api | tail -5 | jq .level,.message
+```
+
 ## Metrics & Monitoring (Optional)
 
 To add Prometheus + Grafana monitoring:

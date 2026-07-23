@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # Runtime
     app_env: str = "local"
     log_level: str = "INFO"
+    log_format: str = "text"  # text|json — json for production log aggregation
 
     # Connections. Defaults target host-side runs (localhost); docker-compose
     # overrides them to the in-network hostnames "postgres" / "redis".
@@ -28,6 +29,8 @@ class Settings(BaseSettings):
     # Worker
     worker_heartbeat_seconds: int = 30
     sync_interval_seconds: int = 6 * 3600  # scheduled sync cadence (system-spec §8)
+    # /health/worker turns 503 when the last heartbeat is older than this.
+    worker_heartbeat_max_age_seconds: int = 90
 
     # Auth (Stage 3)
     secret_key: str = INSECURE_SECRET_KEY_DEFAULT
