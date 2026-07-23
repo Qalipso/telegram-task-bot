@@ -19,6 +19,10 @@ def run_once() -> dict:
     """One heartbeat cycle. Returns a connectivity snapshot."""
     db = health.check_database()
     redis = health.check_redis()
+    try:
+        health.record_worker_heartbeat()
+    except Exception:  # noqa: BLE001 — heartbeat write must not kill the loop
+        logger.exception("failed to record worker heartbeat")
     snapshot = {"database": db.ok, "redis": redis.ok}
     if db.ok and redis.ok:
         logger.info("heartbeat ok %s", snapshot)
