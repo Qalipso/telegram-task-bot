@@ -1,5 +1,7 @@
 # TaskDefiner — AI Work Intelligence Platform
 
+[![CI/CD](https://github.com/Qalipso/telegram-task-bot/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/Qalipso/telegram-task-bot/actions/workflows/ci-cd.yml)
+
 A Telegram bot that turns work chatter into tracked tasks.
 
 People talk in a group ("Иван, fix the server by Friday"). The bot quietly notices the real
