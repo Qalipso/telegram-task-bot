@@ -16,7 +16,7 @@ from __future__ import annotations
 import time
 from typing import Callable
 
-from aiwip_core import health
+from aiwip_core import health, telemetry
 from aiwip_core.logging import get_logger
 
 from .api_client import ApiClient, ConversationalApiError
@@ -27,6 +27,7 @@ logger = get_logger("aiwip.bot")
 
 def _default_api_probe() -> bool:
     """Probe API readiness via GET /api/auth/me (login + cookie replay)."""
+    telemetry.init_sentry("bot")
     s = get_bot_settings()
     client = ApiClient(s.bot_api_base, s.bot_admin_email, s.bot_admin_password)
     try:

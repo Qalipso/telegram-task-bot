@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Response, status
 
-from aiwip_core import health
+from aiwip_core import health, telemetry
 from aiwip_core.config import settings
 from aiwip_core.logging import get_logger
 
@@ -28,6 +28,8 @@ from aiwip_api.routers import users as users_router
 from aiwip_api.routers import work_items as work_items_router
 
 logger = get_logger("aiwip.api")
+
+telemetry.init_sentry("api")
 
 app = FastAPI(title="AI Work Intelligence Platform API", version="0.1.0")
 

@@ -53,6 +53,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aiwip}:${POSTGRES_PASSWORD:-aiwip}@postgres:5432/${POSTGRES_DB:-aiwip}
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
+      SENTRY_DSN: ${SENTRY_DSN:-}
     ports:
       # Loopback only — reach the API from your laptop via an SSH tunnel, not the open internet.
       - "127.0.0.1:8000:8000"
@@ -91,6 +92,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aiwip}:${POSTGRES_PASSWORD:-aiwip}@postgres:5432/${POSTGRES_DB:-aiwip}
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
+      SENTRY_DSN: ${SENTRY_DSN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +122,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-aiwip}:${POSTGRES_PASSWORD:-aiwip}@postgres:5432/${POSTGRES_DB:-aiwip}
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
+      SENTRY_DSN: ${SENTRY_DSN:-}
       BOT_API_BASE: http://api:8000
     depends_on:
       api:
