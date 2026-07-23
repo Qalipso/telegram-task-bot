@@ -51,12 +51,13 @@ docker build -t aiwip-api:1.0.0 -f api/Dockerfile .
 ### 2. Push to Registry
 
 ```bash
-# Using Docker Hub
+# CI publishes images to ghcr.io on every push to main
+# (see .github/workflows/ci-cd.yml):
+#   ghcr.io/qalipso/telegram-task-bot-{api,worker,web}:main
+
+# Manual push to another registry:
 docker tag aiwip-api:latest myusername/aiwip-api:1.0.0
 docker push myusername/aiwip-api:1.0.0
-
-# Or use the script
-./push.sh myregistry.azurecr.io 1.0.0
 ```
 
 ### 3. Deploy with Docker Compose
