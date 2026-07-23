@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     app_env: str = "local"
     log_level: str = "INFO"
     log_format: str = "text"  # text|json — json for production log aggregation
+    sentry_dsn: str | None = None  # error tracking off unless set
 
     # Connections. Defaults target host-side runs (localhost); docker-compose
     # overrides them to the in-network hostnames "postgres" / "redis".

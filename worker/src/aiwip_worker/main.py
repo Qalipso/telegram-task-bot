@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 
-from aiwip_core import health
+from aiwip_core import health, telemetry
 from aiwip_core.config import settings
 from aiwip_core.logging import get_logger
 
@@ -39,6 +39,7 @@ def run() -> None:
     """
     from . import consumer
 
+    telemetry.init_sentry("worker")
     logger.info("worker starting: queue consumer")
     last_heartbeat = 0.0
     while True:
