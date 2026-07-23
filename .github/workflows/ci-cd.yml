@@ -129,6 +129,11 @@ jobs:
           pip install -e "./bot[test]"
           pip install pytest-cov
 
+      # conftest.py points tests at TEST_DATABASE_URL (default …/aiwip_test),
+      # but the postgres service only creates the aiwip database.
+      - name: Create test database
+        run: psql postgresql://aiwip:aiwip@localhost:5432/aiwip -c "CREATE DATABASE aiwip_test;"
+
       - name: Run pytest
         env:
           DATABASE_URL: postgresql+psycopg://aiwip:aiwip@localhost:5432/aiwip
